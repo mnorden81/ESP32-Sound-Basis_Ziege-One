@@ -1,0 +1,51 @@
+name: CI
+
+# Empfehlung 4 (V4-Vergleich): wie im parallel entwickelten Projekt
+# "ESP32-RC-Sound V4" laufen bei jedem Push/PR zwei Schritte automatisch:
+#   1. Die echte Firmware fuer den ESP32 bauen (esp32dev) - reiner Compile-
+#      Check, kein Flashen/keine Hardware noetig.
+#   2. Die hardwareunabhaengigen Host-Tests (native/Unity, siehe lib/
+#      port_registry und test/test_native) ausfuehren.
+# Ein gruener Haken bedeutet: baut, und die Port-B-Kernlogik verhaelt sich
+# noch wie erwartet.
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-firmware:
+    name: Build ESP32 firmware (esp32dev)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build esp32dev environment
+        run: pio run -e esp32dev
+
+  host-tests:
+    name: Host tests (native/Unity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Run native tests
+        run: pio test -e native

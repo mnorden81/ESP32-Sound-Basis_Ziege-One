@@ -503,7 +503,7 @@ void CRSF::send_ping() {
 }
  
 
-void CRSF::send_device_info(const char* name, uint8_t parameter) {
+void CRSF::send_device_info(const char* name, uint8_t parameter, uint8_t paramVersion) {
 
     deviceInfoReplyPending = false;
 
@@ -531,7 +531,20 @@ void CRSF::send_device_info(const char* name, uint8_t parameter) {
     packet[12 + len_name + 4] = 0x00; // software version 4
 
     packet[13 + len_name + 4] = parameter; // number of config parameters
-    packet[14 + len_name + 4] = 0x00; // parameter protocol version
+    // NEU v7.18: war fest 0x00 - Konfiguratoren wie TBS Agent nutzen genau
+    // dieses Byte, um eine bereits gecachte Parameterliste als veraltet zu
+    // erkennen und komplett neu einzulesen. Blieb es konstant, zeigte TBS
+    // Agent nach einem Firmware-Update (hier: neue WLAN-Felder 174-181)
+    // weiterhin seine alte, zwischengespeicherte Menuestruktur - obwohl der
+    // Geraete-Zaehler ("number of config parameters" oben) korrekt
+    // mitgewachsen war. EdgeTX-Lua-Skripte waren nicht betroffen, da sie ihr
+    // Menue bei jedem Lauf frisch aus den Live-Antworten aufbauen und nichts
+    // dauerhaft cachen (Feldbefund). Der Aufrufer (ESP32-RC-Sound.ino)
+    // uebergibt hier die Firmware-Version, die ohnehin bei jeder Aenderung
+    // diszipliniert hochgezaehlt wird - damit aendert sich dieses Byte
+    // automatisch bei jedem Firmware-Update, nicht nur wenn jemand daran
+    // denkt, es manuell zu pflegen.
+    packet[14 + len_name + 4] = paramVersion; // parameter protocol version
 
     packet[packet[1]+1] = crc8(&packet[2], packet[1] - 1);
 

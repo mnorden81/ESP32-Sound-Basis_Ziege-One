@@ -25,7 +25,10 @@ public:
 
     void send_rc_channels_packed();
     void send_ping();
-    void send_device_info(const char* name, uint8_t parameter);
+    // paramVersion: CRSF "Parameter Version Number" - Default 0 nur fuer
+    // Faelle ohne eigene Zaehlung; der Haupt-Aufruf (ESP32-RC-Sound.ino)
+    // uebergibt seit v7.18 die Firmware-Version, siehe dortigen Kommentar.
+    void send_device_info(const char* name, uint8_t parameter, uint8_t paramVersion = 0);
     void send_param_response_CRSF_UINT8(uint8_t param_id, uint8_t parent, const char* name, uint8_t val, uint8_t min, uint8_t max, const char* unit);
     void send_param_response_CRSF_FLOAT(uint8_t param_id, uint8_t parent,  const char* name, uint32_t val, uint32_t min, uint32_t max, uint32_t default_val, uint8_t decimal_point, uint32_t step_size, const char* unit);
     void send_param_response_CRSF_TEXT_SELECTION(uint8_t param_id, uint8_t parent,  const char* name, const char* options, uint8_t val, uint8_t min, uint8_t max);

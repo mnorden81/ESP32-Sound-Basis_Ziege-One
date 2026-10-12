@@ -167,7 +167,7 @@ CI baut bei jedem Push die Firmware und führt die Host-Tests aus.
 
 ## Versionsstand
 
-Aktuell: **v7.17**
+Aktuell: **v7.18**
 
 Wichtige Schritte der V7-Linie:
 
@@ -182,6 +182,7 @@ Wichtige Schritte der V7-Linie:
 | 7.15 | Kein sofortiger `enableAP()`-Aufruf mehr aus Web-/CRSF-Handlern (Risikominimierung) |
 | 7.16 | SD-Aktivitäts-Cooldown vor NVS-Schreibvorgängen (Feldbefund: Brownout-Reset-Loop bei ungepuffertem Modul ohne Stützkondensator direkt nach SD-Schreibzugriff); alle Config-Speicherpfade vereinheitlicht über den debounced Schreibvorgang in `loop()` |
 | 7.17 | Fix: Lautstärkeänderung während einer laufenden Web-Testwiedergabe (Sound-Slots 1–24) wirkte bisher erst beim nächsten Trigger, nicht auf die bereits laufende Wiedergabe (`handleSound()`) |
+| 7.18 | Fix: CRSF-"Parameter Version Number" im DEVICE_INFO-Frame war fest `0x00` (`send_device_info()`, crsf_esp32.cpp) – Konfiguratoren mit persistentem Parameter-Cache (TBS Agent) erkannten dadurch neue/geänderte Lua-Felder nicht automatisch und zeigten weiter ihr altes Menü. Jetzt wird die Firmware-Version mitgegeben, die ohnehin bei jeder Änderung hochgezählt wird. EdgeTX-Lua-Skripte waren nicht betroffen (bauen ihr Menü bei jedem Lauf neu auf). |
 
 Die vollständige Historie ab v5.1 steht in der Projektbeschreibung (`ESP32-RC-Sound-V7-Projektbeschreibung-*.docx`).
 

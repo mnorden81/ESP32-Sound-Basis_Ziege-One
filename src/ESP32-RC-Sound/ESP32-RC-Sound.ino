@@ -130,7 +130,7 @@
 #include "gps_speed.h"   // GPS-Geschwindigkeit (Port C)
 #include "port_function.h"   // Port-B-Rollen-Registry
 
-uint16_t Version = 717;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (717 -> "7.17")
+uint16_t Version = 718;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (718 -> "7.18")
 char versionString[6];
 bool gpsPinConflict = false; // true, wenn Port C (GPS) UND SBUS gleichzeitig gewaehlt sind (GPIO27-Konflikt, siehe setup())
 // Ob der AP gerade aktiv ist, wird NICHT hier gespiegelt: loop() fragt dafuer
@@ -1060,7 +1060,13 @@ void loop() {
             // damit sich die Device-Info-Antworten mehrerer Module nicht ueberlappen.
             crsf.setDeviceInfoReplyPending(false);
             char dn[24]; snprintf(dn,sizeof(dn),"%s@%d",config.Device_Name,config.modul_adress);
-            crsf.send_device_info(dn,CRSF_PARAM_COUNT);
+            // NEU v7.18: Firmware-Version als CRSF "Parameter Version Number"
+            // mitgeben (war zuvor fest 0x00, siehe Kommentar in
+            // crsf_esp32.cpp/send_device_info()) - damit erkennen
+            // Konfiguratoren wie TBS Agent eine geaenderte Parameterstruktur
+            // zuverlaessig und lesen sie neu ein, statt eine veraltete
+            // zwischengespeicherte Menuestruktur weiter anzuzeigen.
+            crsf.send_device_info(dn,CRSF_PARAM_COUNT,(uint8_t)(Version & 0xFF));
         }
         if(crsf.getDeviceReadReplyPending()){
             uint8_t pi=crsf.getParamReadIndex();
