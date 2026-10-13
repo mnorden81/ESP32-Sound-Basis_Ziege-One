@@ -81,15 +81,16 @@ pio run -e esp32dev -t upload    # bauen und flashen
 pio test -e native               # Host-Tests, ohne ESP32-Hardware
 ```
 
-Bibliotheksversionen sind in `platformio.ini` fest gepinnt. Die Partitionstabelle steht auf `default_ota.csv` — zwei App-Partitionen, damit OTA funktioniert.
+Bibliotheksversionen sind in `platformio.ini` fest gepinnt. Die Partitionstabelle steht auf `default.csv` (Standard des Arduino-ESP32-Cores) — zwei App-Partitionen à 1,25 MB, damit OTA funktioniert.
 
 ### Arduino IDE
 
 Benötigte Bibliotheken:
 
 - Bolder Flight Systems SBUS 8.1.4
-- [CRSF_ESP32](https://github.com/Ziege-One/CRSF_ESP32) — nicht in den Registries, als lokale Kopie einbinden
-- Nur für GPS: `EspSoftwareSerial`, `TinyGPSPlus`
+- EspSoftwareSerial 8.2.0 und TinyGPSPlus 1.1.0 (für GPS, werden immer mitkompiliert)
+
+Der CRSF-Code (ursprünglich [CRSF_ESP32](https://github.com/Ziege-One/CRSF_ESP32)) liegt als angepasste Kopie direkt im Sketch (`crsf_esp32.*`), eine separate Bibliothek ist nicht nötig.
 
 Im Menü **Werkzeuge → Partition Scheme** ein OTA-fähiges Schema wählen, sonst funktioniert das Firmware-Update per WLAN nicht. Der Ordner `lib/` und `test/` gehören **nicht** in den Sketch-Ordner — nur der Inhalt von `src/`, sonst meldet der Compiler „multiple definition of …".
 
@@ -184,9 +185,7 @@ Wichtige Schritte der V7-Linie:
 | 7.17 | Fix: Lautstärkeänderung während einer laufenden Web-Testwiedergabe (Sound-Slots 1–24) wirkte bisher erst beim nächsten Trigger, nicht auf die bereits laufende Wiedergabe (`handleSound()`) |
 | 7.18 | Fix: CRSF-"Parameter Version Number" im DEVICE_INFO-Frame war fest `0x00` (`send_device_info()`, crsf_esp32.cpp) – Konfiguratoren mit persistentem Parameter-Cache (TBS Agent) erkannten dadurch neue/geänderte Lua-Felder nicht automatisch und zeigten weiter ihr altes Menü. Jetzt wird die Firmware-Version mitgegeben, die ohnehin bei jeder Änderung hochgezählt wird. EdgeTX-Lua-Skripte waren nicht betroffen (bauen ihr Menü bei jedem Lauf neu auf). |
 
-Die vollständige Historie ab v5.1 steht in der Projektbeschreibung (`ESP32-RC-Sound-V7-Projektbeschreibung-*.docx`).
-
-`firmware-v5`, `firmware-v6` und `firmware-v7` sind drei getrennte, unabhängig baubare Projekte ohne gemeinsame Versionszählung.
+Dieses Repository enthält nur die V7-Linie. Ältere Stände (V5, V6) sind getrennte Projekte und liegen nicht hier.
 
 ---
 
