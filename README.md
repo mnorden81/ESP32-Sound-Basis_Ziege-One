@@ -204,4 +204,4 @@ Das Adressierungsschema für mehrere Module am selben CRSF-Bus folgt dem Schema 
 
 Das Projekt steht unter der **GNU General Public License, Version 3 oder später** (GPL-3.0-or-later), siehe [LICENSE](LICENSE).
 
-Grund: Die enthaltene Audio-Engine von XTronical (`XT_I2S_Audio`) steht unter GPL 3.0 oder später. Eine Firmware, die diesen Code enthält und weitergegeben wird, muss als Ganzes unter einer GPL-3.0-kompatiblen Lizenz stehen. Die eingebundenen Bibliotheken (Bolder Flight SBUS: MIT, EspSoftwareSerial und TinyGPSPlus: LGPL-2.1) sind damit vereinbar.
+Grund: Die enthaltene Audio-Engine von XTronical (`XT_I2S_Audio`) steht unter GPL 3.0 oder später, die Vorlagen von Ziege-One (*ESP32-SBUS-Switch* und *CRSF_ESP32*) stehen unter GPL 3.0. Eine Firmware, die diesen Code enthält und weitergegeben wird, muss als Ganzes unter einer GPL-3.0-kompatiblen Lizenz stehen. Die eingebundenen Bibliotheken (Bolder Flight SBUS: MIT, EspSoftwareSerial und TinyGPSPlus: LGPL-2.1) sind damit vereinbar.
