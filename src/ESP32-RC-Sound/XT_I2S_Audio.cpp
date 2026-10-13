@@ -7,7 +7,7 @@
 #include <math.h>
 #include <cstring>
 #include <algorithm>
-#include <hardwareSerial.h>
+#include <HardwareSerial.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
