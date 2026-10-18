@@ -191,7 +191,14 @@ Dieses Repository enthält nur die V7-Linie. Ältere Stände (V5, V6) sind getre
 
 ## Herkunft und Dank
 
-Technische Basis ist **Frank Verfürths** Projekt *ESP32-SBUS-Switch* (2022) — von dort stammen der grundlegende Ansatz für SBUS-/CRSF-/S.Port-Protokoll, die WLAN-Weboberfläche und die I2S-Audioausgabe. Das Soundmodul ist daraus als eigenständiges, neu entworfenes Projekt hervorgegangen.
+Die Hardware dieses Soundmoduls stammt von **Der RC-Modellbauer** (Frank Verfürth, auf GitHub **Ziege-One**).
+
+- Webseite und Shop: [derrcmodellbauer.de](https://derrcmodellbauer.de/)
+- Platinen: [ESP32 RC-Sound Platine V2](https://derrcmodellbauer.de/produkt/esp32-rc-sound-platine/), [ESP32 RC-Sound Platine V3](https://derrcmodellbauer.de/produkt/esp32-rc-sound-platine-v3/), [ESP32 RC-Sound Bausatz](https://derrcmodellbauer.de/produkt/esp32-rc-sound-bausatz/)
+- GitHub: [github.com/Ziege-One](https://github.com/Ziege-One), Vorlagen [ESP32-RC-Sound](https://github.com/Ziege-One/ESP32-RC-Sound), [ESP32-SBus-Switch](https://github.com/Ziege-One/ESP32-SBus-Switch) und [CRSF_ESP32](https://github.com/Ziege-One/CRSF_ESP32)
+- YouTube: [Der RC-Modellbauer](https://www.youtube.com/@DerRCModellbauer)
+
+Technische Basis der Firmware ist sein Projekt *ESP32-SBUS-Switch* (2022) — von dort stammen der grundlegende Ansatz für SBUS-/CRSF-/S.Port-Protokoll, die WLAN-Weboberfläche und die I2S-Audioausgabe. Das Soundmodul ist daraus als eigenständiges, neu entworfenes Projekt hervorgegangen.
 
 Die Audio-Engine (`XT_I2S_Audio`) stammt von **XTronical** und steht unter GNU GPL 3.0.
 
