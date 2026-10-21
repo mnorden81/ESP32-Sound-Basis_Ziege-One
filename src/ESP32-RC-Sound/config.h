@@ -42,12 +42,13 @@ enum PortBMode {
     PORTB_CRSF  = 1,
     PORTB_SPORT = 2,
     PORTB_HOTT  = 3,   // in Vorbereitung
-    PORTB_RAW   = 4
+    PORTB_RAW   = 4,
+    PORTB_GPS   = 5    // NEU v7.20: NMEA-GPS am Hardware-UART (wie Port C)
 };
 // Anzahl Eintraege im PortBMode-Enum oben - siehe port_function.cpp (Rollen-
 // Registry: Web-UI und CRSF/Lua-Menue lesen ihre Optionsliste von dort statt
 // sie zusaetzlich hier von Hand zu duplizieren).
-static constexpr uint8_t PORTB_FUNCTION_COUNT = 5;
+static constexpr uint8_t PORTB_FUNCTION_COUNT = 6;
 // Protokolltypische Standard-Baudraten - Web-UI/CRSF-Menue setzen die
 // Baudrate beim Wechsel des Modus auf diesen Wert vor, sie bleibt aber immer
 // frei ueberschreibbar (bei PORTB_RAW gibt es keinen sinnvollen Standard).
@@ -55,6 +56,7 @@ static constexpr uint32_t PORTB_BAUD_DEFAULT_CRSF  = 420000;
 static constexpr uint32_t PORTB_BAUD_DEFAULT_SPORT = 57600;
 static constexpr uint32_t PORTB_BAUD_DEFAULT_HOTT  = 19200;
 static constexpr uint32_t PORTB_BAUD_DEFAULT_RAW   = 115200;
+static constexpr uint32_t PORTB_BAUD_DEFAULT_GPS   = 9600;
 
 // "Mehrfachadress-Erweiterung": statt einer einzelnen Adresse mit
 // 2-Bit/Schalter-"Ebenen" werden bis zu RCSOUND_NUM_GROUPS unabhaengige

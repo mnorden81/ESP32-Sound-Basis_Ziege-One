@@ -403,7 +403,9 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div style="color:var(--yellow);font-size:12px;margin-top:8px">
       &#9888; Aenderungen an Port B/C wirken erst nach einem Neustart des Moduls.
       Port C (GPS) kollidiert mit SBUS (GPIO27 wird von beiden belegt) - fuer
-      GPS bitte Einkanal/RC-System auf CRSF stellen.
+      GPS bitte Einkanal/RC-System auf CRSF stellen oder GPS auf Port B legen.
+      Steht Port B auf GPS, bleibt Port C aus (nur ein GPS). Port C laeuft per
+      SoftwareSerial und kann deshalb nur GPS (kein CRSF, kein S.Port).
     </div>
   </div>
   <button class="btn btn-p" onclick="saveSettings()">Speichern</button>
@@ -614,7 +616,7 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     <div id="dbg-wav"></div>
   </div>
   <div class="card">
-    <div class="card-title">GPS (Port C)</div>
+    <div class="card-title">GPS (Port B oder C)</div>
     <div id="dbg-gps"></div>
   </div>
   <div class="card">
@@ -933,7 +935,7 @@ function renderDbg(){
   var gp=document.getElementById('dbg-gps');
   if(gp&&dbg.gps){
     var g=dbg.gps;
-    if(!g.active){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">Port C (GPS) ist aus</span></div>';}
+    if(!g.active && !g.pinConflict){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">GPS ist aus (weder Port B noch Port C)</span></div>';}
     else if(g.pinConflict){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">deaktiviert</span></div>'+
       '<div style="font-size:11px;color:var(--sub);margin-top:8px">GPIO27-Konflikt: Port C (GPS) + SBUS gleichzeitig gewaehlt - GPIO27 wird von SBUS UND GPS beansprucht. GPS bleibt deaktiviert, SBUS hat Vorrang. Fuer GPS bitte Einkanal/RC-System auf CRSF stellen.</div>';}
     else{gp.innerHTML='<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
@@ -2670,7 +2672,7 @@ void WebServerManager::handleApiDebug() {
 
   // GPS-Status (Port C)
   j += ",\"gps\":{";
-  j += "\"active\":" + String(PortC_GPS_Enabled_boot ? 1 : 0) + ",";
+  j += "\"active\":" + String(gpsIsActive() ? 1 : 0) + ",";   // v7.20: Port B oder C
   j += "\"speed\":"  + String(gpsGetSpeedKmh(), 1) + ",";
   j += "\"sats\":"   + String(gpsGetSatellites())  + ",";
   j += "\"fix\":"    + String(gpsHasFix() ? 1 : 0)  + ",";

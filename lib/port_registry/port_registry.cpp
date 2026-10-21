@@ -6,7 +6,7 @@ namespace port_registry {
 // Reihenfolge == numerischer PortBMode-Wert - muss zu PORTB_MODULES[] in
 // src/ESP32-RC-Sound/port_function.cpp passen.
 static const char* const PORTB_NAMES[PORTB_FUNCTION_COUNT] = {
-    "Aus", "CRSF", "S.Port", "Hott (bald)", "Raw",
+    "Aus", "CRSF", "S.Port", "Hott (bald)", "Raw", "GPS",
 };
 
 const char* const* portBFunctionNames() {
