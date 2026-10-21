@@ -39,11 +39,12 @@ enum PortBMode {
     PORTB_CRSF  = 1,
     PORTB_SPORT = 2,
     PORTB_HOTT  = 3,   // in Vorbereitung
-    PORTB_RAW   = 4
+    PORTB_RAW   = 4,
+    PORTB_GPS   = 5
 };
 
 // Muss zu PORTB_FUNCTION_COUNT in src/ESP32-RC-Sound/config.h passen.
-constexpr uint8_t PORTB_FUNCTION_COUNT = 5;
+constexpr uint8_t PORTB_FUNCTION_COUNT = 6;
 
 // Muss zu PORTB_MODULES[].name in src/ESP32-RC-Sound/port_function.cpp passen
 // (Reihenfolge == numerischer PortBMode-Wert).
@@ -52,7 +53,7 @@ const char* const* portBFunctionNames();
 // Anzeigename einer Rolle (auch fuer PORTB_OFF und ungueltige Werte: "Aus").
 const char* portBFunctionName(PortBMode f);
 
-// ";"-getrennte Namensliste, z.B. "Aus;CRSF;S.Port;Hott (bald);Raw" - muss zu
+// ";"-getrennte Namensliste, z.B. "Aus;CRSF;S.Port;Hott (bald);Raw;GPS" - muss zu
 // portBFunctionOptionsString() in port_function.cpp passen.
 const char* portBFunctionOptionsString();
 

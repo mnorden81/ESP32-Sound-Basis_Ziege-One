@@ -22,7 +22,7 @@ static void test_portb_function_count_matches_names(void) {
     // Wenn jemand PORTB_FUNCTION_COUNT erhoeht/verringert, ohne die Namens-
     // tabelle nachzuziehen, faellt das hier sofort auf (statt erst als Off-
     // by-one-Bug in der Options-String-Ausgabe).
-    TEST_ASSERT_EQUAL_UINT8(5, PORTB_FUNCTION_COUNT);
+    TEST_ASSERT_EQUAL_UINT8(6, PORTB_FUNCTION_COUNT);
 }
 
 static void test_portb_function_name_known_values(void) {
@@ -31,6 +31,7 @@ static void test_portb_function_name_known_values(void) {
     TEST_ASSERT_EQUAL_STRING("S.Port",      portBFunctionName(PORTB_SPORT));
     TEST_ASSERT_EQUAL_STRING("Hott (bald)", portBFunctionName(PORTB_HOTT));
     TEST_ASSERT_EQUAL_STRING("Raw",         portBFunctionName(PORTB_RAW));
+    TEST_ASSERT_EQUAL_STRING("GPS",         portBFunctionName(PORTB_GPS));
 }
 
 static void test_portb_function_name_out_of_range_falls_back_to_off(void) {
@@ -41,11 +42,11 @@ static void test_portb_function_options_string_matches_firmware(void) {
     // Muss exakt zu portBFunctionOptionsString() in
     // src/ESP32-RC-Sound/port_function.cpp passen (Index == PortBMode-Wert,
     // siehe fillSelFlat()/CRSF_TEXT_SELECTION im Web-UI bzw. CRSF/Lua-Menue).
-    TEST_ASSERT_EQUAL_STRING("Aus;CRSF;S.Port;Hott (bald);Raw", portBFunctionOptionsString());
+    TEST_ASSERT_EQUAL_STRING("Aus;CRSF;S.Port;Hott (bald);Raw;GPS", portBFunctionOptionsString());
 }
 
 static void test_portb_function_max_index(void) {
-    TEST_ASSERT_EQUAL_UINT8(4, portBFunctionMaxIndex());
+    TEST_ASSERT_EQUAL_UINT8(5, portBFunctionMaxIndex());
 }
 
 // ── clampPortBMode() ────────────────────────────────────────────────────
@@ -56,11 +57,12 @@ static void test_clamp_portb_mode_valid_values_pass_through(void) {
     TEST_ASSERT_EQUAL(PORTB_SPORT, clampPortBMode(2));
     TEST_ASSERT_EQUAL(PORTB_HOTT,  clampPortBMode(3));
     TEST_ASSERT_EQUAL(PORTB_RAW,   clampPortBMode(4));
+    TEST_ASSERT_EQUAL(PORTB_GPS,   clampPortBMode(5));
 }
 
 static void test_clamp_portb_mode_out_of_range_falls_back_to_off(void) {
     TEST_ASSERT_EQUAL(PORTB_OFF, clampPortBMode(-1));
-    TEST_ASSERT_EQUAL(PORTB_OFF, clampPortBMode(5));
+    TEST_ASSERT_EQUAL(PORTB_OFF, clampPortBMode(6));
     TEST_ASSERT_EQUAL(PORTB_OFF, clampPortBMode(255));
 }
 

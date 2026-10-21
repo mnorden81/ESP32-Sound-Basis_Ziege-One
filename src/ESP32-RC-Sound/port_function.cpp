@@ -9,6 +9,7 @@
 
 #include "port_function.h"
 #include "sport_lipo.h"
+#include "gps_speed.h"
 #include "src/CRSF_ESP32/crsf_esp32.h"
 #include <cstring>
 
@@ -67,6 +68,7 @@ static const PortBFunctionModule PORTB_MODULES[PORTB_FUNCTION_COUNT] = {
     { "S.Port",      PORTB_BAUD_DEFAULT_SPORT, sportLipoInit,  sportLipoUpdate, sportLipoIsActive },   // PORTB_SPORT
     { "Hott (bald)", PORTB_BAUD_DEFAULT_HOTT,  portBHottBegin, portBHottUpdate, portBHottIsActive },   // PORTB_HOTT
     { "Raw",         PORTB_BAUD_DEFAULT_RAW,   portBRawBegin,  portBRawUpdate,  portBRawIsActive },    // PORTB_RAW
+    { "GPS",         PORTB_BAUD_DEFAULT_GPS,   gpsSpeedInitHw, gpsSpeedUpdate,  gpsIsActive },         // PORTB_GPS (v7.20)
 };
 
 const PortBFunctionModule* getPortBModule(PortBMode f) {

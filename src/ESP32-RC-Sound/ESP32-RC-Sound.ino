@@ -54,7 +54,12 @@
             UND CRSF/Lua-Menue, mit frei einstellbarer Baudrate je Rolle:
             Aus, S.Port-Master (LiPo-Telemetrie an FrSky-Empfaenger),
             CRSF (zweite, unabhaengige CRSF-Instanz), Hott (Menue
-            vorhanden, Treiber noch offen) oder generischer Raw-UART.
+            vorhanden, Treiber noch offen), generischer Raw-UART oder
+            (seit v7.20) GPS.
+            Port C hat keinen freien Hardware-UART (UART0 = USB/Debug,
+            UART1/2 = Port A und B) und laeuft per SoftwareSerial. CRSF
+            (420000 Baud) und S.Port sind darauf nicht zuverlaessig moeglich,
+            deshalb bleibt Port C nur GPS an/aus.
    Port C = GPS (SoftwareSerial GPIO27/14) fuer CRSF-GPS-Telemetrie
             (Geschwindigkeit/Position an den Sender) - unabhaengiger
             An/Aus-Schalter. Kollidiert mit SBUS als Bus-Protokoll (beide
@@ -131,7 +136,7 @@
 #include "gps_speed.h"   // GPS-Geschwindigkeit (Port C)
 #include "port_function.h"   // Port-B-Rollen-Registry
 
-uint16_t Version = 719;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (719 -> "7.19")
+uint16_t Version = 720;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (720 -> "7.20")
 char versionString[6];
 bool gpsPinConflict = false; // true, wenn Port C (GPS) UND SBUS gleichzeitig gewaehlt sind (GPIO27-Konflikt, siehe setup())
 // Ob der AP gerade aktiv ist, wird NICHT hier gespiegelt: loop() fragt dafuer
@@ -937,7 +942,10 @@ void setup() {
 
     // Port C (GPS) - unabhaengiger An/Aus-Schalter. Kollidiert mit SBUS als
     // Bus-Protokoll (beide belegen GPIO27), siehe gpsPinConflict.
-    if (PortC_GPS_Enabled_boot) {
+    if (PortC_GPS_Enabled_boot && PortB_Mode_boot == PORTB_GPS) {
+        // v7.20: es gibt nur ein GPS - Port B (Hardware-UART) hat Vorrang.
+        Serial.println("Port C (GPS) bleibt aus: GPS laeuft bereits auf Port B.");
+    } else if (PortC_GPS_Enabled_boot) {
         if (config.Einkanal_RC_System != 4) {
             gpsPinConflict = true;
             Serial.println("!!! WARNUNG: Port C (GPS) zusammen mit SBUS gewaehlt !!!");
@@ -1019,7 +1027,7 @@ void loop() {
         if (portBModule != nullptr && portBModule->update != nullptr) portBModule->update();
     }
     // Port C (GPS) laufend einlesen (nicht bei GPIO27-Konflikt, siehe setup())
-    if (PortC_GPS_Enabled_boot && !gpsPinConflict) {
+    if (PortC_GPS_Enabled_boot && !gpsPinConflict && PortB_Mode_boot != PORTB_GPS) {
         gpsSpeedUpdate();
     }
 
@@ -1050,7 +1058,8 @@ void loop() {
                 if (lipoSensor[1].online) sportSendCellsTelemetry(1);
             }
             // GPS-Telemetrie (CRSF-GPS-Frame) -> EdgeTX zeigt "GSpd"
-            if (PortC_GPS_Enabled_boot) {
+            // v7.20: GPS an Port B oder Port C
+            if (gpsIsActive()) {
                 uint16_t gspd = (uint16_t)(gpsGetSpeedKmh() * 10.0f); // CRSF: km/h * 10
                 crsf.send_tele_GPS(gpsGetLatE7(), gpsGetLonE7(), gspd,
                                    gpsGetHeadingCdeg(), gpsGetAltMeters(), gpsGetSatellites());

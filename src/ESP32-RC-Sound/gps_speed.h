@@ -1,6 +1,7 @@
 /*
  * gps_speed.h  –  ESP32-RC-Sound  (Port C - per PortC_GPS_Enabled
- * unabhaengig schaltbar, siehe Port-Modell in config.h)
+ * unabhaengig schaltbar, seit v7.20 auch als Rolle "GPS" auf Port B,
+ * siehe Port-Modell in config.h)
  *
  * GPS-Geschwindigkeitsmessung, nur auf Hardware V3 nutzbar (dort sind die
  * Pins frei - siehe config.h).
@@ -13,6 +14,10 @@
  *
  * S.Port (UART1, GPIO 32/33) und CRSF (UART2, GPIO 16/17) bleiben unberührt.
  *
+ * Seit v7.20 alternativ auf Port B (Hardware-UART, GPIO 32 RX / 33 TX, Baudrate
+ * waehlbar): gpsSpeedInitHw() aus der Port-B-Registry. Es gibt nur ein GPS -
+ * hat Port B die Rolle GPS, bleibt Port C aus.
+ *
  * Nach dem Start wird das GPS einmalig per CASIC-Kommando auf 5 Hz gestellt
  * (ATGM336H/AT6558) und auf die Ausgabe von GGA+RMC reduziert. Die Einstellung
  * ist flüchtig und wird bei jedem Start neu gesetzt.
@@ -24,7 +29,9 @@
 
 #include <Arduino.h>
 
-void     gpsSpeedInit();       // GPS initialisieren (RX=GPIO27, TX=GPIO14)
+void     gpsSpeedInit();       // GPS an Port C initialisieren (RX=GPIO27, TX=GPIO14)
+void     gpsSpeedInitHw(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud); // v7.20: GPS an Port B
+bool     gpsIsActive();        // true, sobald GPS an Port B oder C gestartet wurde
 void     gpsSpeedUpdate();     // NMEA einlesen/auswerten + Konfig nach Boot senden
 
 float    gpsGetSpeedKmh();     // aktuelle Geschwindigkeit in km/h

@@ -49,8 +49,8 @@ Getestet auf gängigen ESP32-DevKit-Boards (PlatformIO-Board `esp32dev`), mit SD
 ### Port-Modell (V3)
 
 - **Port A** — RC-Eingang, fest belegt (CRSF oder SBUS-Familie)
-- **Port B** — zweiter Hardware-UART, Rolle frei wählbar: Aus, S.Port-Master, CRSF (zweite Instanz), Hott (Menü vorhanden, Treiber offen) oder Raw-UART, je mit eigener Baudrate
-- **Port C** — GPS für CRSF-Telemetrie, unabhängig zuschaltbar
+- **Port B** — zweiter Hardware-UART, Rolle frei wählbar: Aus, S.Port-Master, CRSF (zweite Instanz), GPS (ab v7.20), Hott (Menü vorhanden, Treiber offen) oder Raw-UART, je mit eigener Baudrate
+- **Port C** — GPS für CRSF-Telemetrie, unabhängig zuschaltbar. Nur GPS möglich: Port C läuft per SoftwareSerial, weil der ESP32 keinen dritten freien Hardware-UART hat. Steht Port B auf GPS, bleibt Port C aus.
 
 > **Achtung:** Port C (GPS) und die SBUS-Familie belegen beide GPIO 27. Bei gleichzeitiger Aktivierung bleibt GPS deaktiviert und die Firmware meldet einen GPIO27-Konflikt. Für GPS das RC-System auf ELRS (CRSF) stellen.
 
@@ -129,7 +129,7 @@ Bei RC-System ELRS (CRSF) ist das Modul vollständig über das native Parameterm
 | Sound-Upload meldet `sd_locked`, Löschen geht auch nicht | Die WAV-Datei auf der Karte trägt das FAT-Attribut *schreibgeschützt*. Windows übernimmt es beim Kopieren oft unbemerkt — und nur für einzelne Dateien | Am PC prüfen mit `attrib X:\*.wav`, aufheben mit `attrib -r X:\*.wav` |
 | Upload meldet `sd_write` | Karte voll, schreibgeschützt oder defekt | Serial-Log ansehen: die Firmware gibt bei jedem Fehlschlag freien Kartenspeicher, freigegebene Datei-Handles und freien Heap aus |
 | Firmware startet, aber kein AP sichtbar | GPIO 13 beim Start nicht auf LOW | Taster/Brücke gegen GND beim Einschalten, oder Failsafe abwarten |
-| GPS meldet „GPIO27-Konflikt" | Port C und SBUS gleichzeitig aktiv | RC-System auf ELRS (CRSF) stellen oder GPS deaktivieren |
+| GPS meldet „GPIO27-Konflikt" | Port C und SBUS gleichzeitig aktiv | RC-System auf ELRS (CRSF) stellen, GPS auf Port B legen oder GPS deaktivieren |
 | Port B bleibt inaktiv, „kein freier Hardware-UART" | Port B würde denselben UART wie Port A belegen | RC-System und Port-B-Rolle prüfen — die Kollisionsprüfung verhindert das bewusst |
 | „multiple definition of …" beim Kompilieren | `lib/` und `test/` wurden in den Sketch-Ordner kopiert | Nur den Inhalt von `src/` verwenden |
 
@@ -156,7 +156,7 @@ src/ESP32-RC-Sound/
   XT_I2S_Audio.cpp/.h    WAV-Wiedergabe über I2S, SD-Zugriff
   src/CRSF_ESP32/        Gemeinsame CRSF-Bibliothek (Protokoll, Telemetrie, Discovery)
   sport_lipo.cpp/.h      S.Port-Telemetrie (Port B)
-  gps_speed.cpp/.h       GPS-Auswertung (Port C)
+  gps_speed.cpp/.h       GPS-Auswertung (Port C oder Port B)
   port_function.cpp/.h   Port-B-Rollen-Registry
 lib/port_registry/       Hardwareunabhängiger Spiegel der Registry
 test/                    Unity-Tests, laufen ohne ESP32
@@ -171,7 +171,7 @@ CI baut bei jedem Push die Firmware und führt die Host-Tests aus.
 
 ## Versionsstand
 
-Aktuell: **v7.19**
+Aktuell: **v7.20**
 
 Wichtige Schritte der V7-Linie:
 
@@ -187,6 +187,7 @@ Wichtige Schritte der V7-Linie:
 | 7.16 | SD-Aktivitäts-Cooldown vor NVS-Schreibvorgängen (Feldbefund: Brownout-Reset-Loop bei ungepuffertem Modul ohne Stützkondensator direkt nach SD-Schreibzugriff); alle Config-Speicherpfade vereinheitlicht über den debounced Schreibvorgang in `loop()` |
 | 7.17 | Fix: Lautstärkeänderung während einer laufenden Web-Testwiedergabe (Sound-Slots 1–24) wirkte bisher erst beim nächsten Trigger, nicht auf die bereits laufende Wiedergabe (`handleSound()`) |
 | 7.19 | CRSF-Code als gemeinsame Bibliothek `src/CRSF_ESP32/` (v1.0.0, auch im Multiswitch). Fixes laut CRSF-Spezifikation: Empfangs-Parser verliert keine Frames mehr, die über zwei Aufrufe verteilt ankommen (vorher verloren und als CRC-Fehler gezählt); Link-Statistik-Felder korrekt zugeordnet; Command-CRC (0xBA) korrigiert; FOLDER-Eintrag ohne überzähliges Byte. Host-Tests in `test/test_crsf`. |
+| 7.20 | Port B kann zusätzlich die Rolle **GPS** übernehmen (Hardware-UART GPIO32/33, Baudrate wählbar, Web-UI und Lua-Menü). Damit lassen sich CRSF, S.Port und GPS auf Port B wählen. Port C bleibt GPS an/aus: es gibt keinen dritten freien Hardware-UART (UART0 = USB/Debug), mit SoftwareSerial sind CRSF (420000 Baud) und S.Port nicht zuverlässig. Steht Port B auf GPS, bleibt Port C aus. GPS-Telemetrie kommt von dem Port, auf dem GPS läuft. |
 | 7.18 | Fix: CRSF-"Parameter Version Number" im DEVICE_INFO-Frame war fest `0x00` (`send_device_info()`, crsf_esp32.cpp) – Konfiguratoren mit persistentem Parameter-Cache (TBS Agent) erkannten dadurch neue/geänderte Lua-Felder nicht automatisch und zeigten weiter ihr altes Menü. Jetzt wird die Firmware-Version mitgegeben, die ohnehin bei jeder Änderung hochgezählt wird. EdgeTX-Lua-Skripte waren nicht betroffen (bauen ihr Menü bei jedem Lauf neu auf). |
 
 Dieses Repository enthält nur die V7-Linie. Ältere Stände (V5, V6) sind getrennte Projekte und liegen nicht hier.
