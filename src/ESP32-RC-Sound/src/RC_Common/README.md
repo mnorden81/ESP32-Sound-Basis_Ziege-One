@@ -16,10 +16,11 @@ Gemeinsame Basis aller ESP32-Firmwaren (RC-Multiswitch C3/S3, Multiswitch Basis 
 | Datei | Inhalt |
 |---|---|
 | `CRSF_ESP32/` | CRSF-Bibliothek 1.1.0 mit Router für die Modulkette (eigene README) |
-| `uart_roles.*` | Rollen der Zusatz-UARTs, überall gleich nummeriert: 0 Aus, 1 CRSF, 2 S.Port, 3 GPS, 4 Raw. Baudratenliste, Umrechnung alter NVS-Werte |
+| `uart_roles.*` | Rollen der Zusatz-UARTs, überall gleich nummeriert: 0 Aus, 1 CRSF, 2 S.Port, 3 GPS, 4 Raw. Baudratenliste mit „Auto“, Umrechnung alter NVS-Werte |
 | `uart_ports.*` | Startet Port B/C nach Rolle (CRSF-Router, S.Port, GPS, Raw), erkennt doppelte Rollen, sendet die Telemetrie |
 | `sport_lipo.*` | FrSky S.Port Master für FLVSS/MLVSS → CRSF-Zellspannungen |
 | `gps_speed.*` | NMEA-GPS → CRSF-GPS-Telemetrie und Geschwindigkeit |
+| `gps_autobaud.*` | Baudrate „Auto“ für GPS: Suche 9600/115200/38400/57600/19200, Umstellung auf 115200 und 10 Hz (CASIC/ATGM336H und u-blox M8/M9/M10), neue Suche nach 3 s ohne Daten |
 | `lua_menu.*` | Lua-Parametermenü als Tabelle (Vorbild G030/WMuCpp) |
 | `settings_common.*` | Gemeinsame NVS-Schlüssel (WLAN, Moduladresse, Failsafe, UART-Rollen) mit einmaliger Übernahme der alten Schlüssel |
 | `wifi_failsafe.h` | WLAN schaltet sich ohne RC-Signal nach Timeout ein (nie automatisch aus) |
@@ -36,5 +37,6 @@ Im Namensraum des jeweiligen Projekts: `ssid pass wip dnam madr wfauto wftmo wfa
 | RC_Common | CRSF_ESP32 | Änderung |
 |---|---|---|
 | 1.0.0 | 1.1.0 | Erste gemeinsame Basis (Schritte 1–9 des Firmware-Vergleichs vom 21.10.2026) |
+| 1.1.0 | 1.1.0 | GPS-Baudrate „Auto“ (wie Betaflight/INAV): Eintrag 0 der Baudratenliste, Vorgabe für die Rolle GPS. Bei „Auto“ nehmen die anderen Rollen ihre Protokoll-Baudrate. Alte GPS-Einstellungen werden bei der Übernahme auf „Auto“ gesetzt. `rcFillBaud()` in `/rc_common.js` |
 
 Voraussetzung: ESP32 Arduino Core 3.x (Multiswitch: arduino-cli `esp32:esp32@3.0.7`, Soundmodule: PlatformIO pioarduino 51.03.07 = Core 3.0.7).

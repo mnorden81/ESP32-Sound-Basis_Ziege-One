@@ -15,6 +15,8 @@ void uartPortsBegin(UartPort* ports, uint8_t count, CRSF& crsf, bool crsfBus) {
         if (i == 1) p.activeRole = uartRoleResolveSecond(ports[0].activeRole, p.activeRole, &p.duplicate);
         if (p.activeRole == UROLE_CRSF && !crsfBus) { p.idle = true; p.activeRole = UROLE_OFF; }
         if (p.baud == 0) p.baud = uartRoleDefaultBaud(p.activeRole);
+        // "Auto": GPS sucht selbst, die anderen Rollen nehmen ihre Protokoll-Baudrate
+        if (p.baud == UART_BAUD_AUTO && p.activeRole != UROLE_GPS) p.baud = uartBaudStart(p.activeRole, p.baud);
     }
 
     // CRSF-Ports gemeinsam an den Router
@@ -39,7 +41,10 @@ void uartPortsBegin(UartPort* ports, uint8_t count, CRSF& crsf, bool crsfBus) {
         }
         if (!p.ser) continue;
         Serial.printf("%s: %s", p.name, uartRoleName(p.activeRole));
-        if (p.activeRole != UROLE_OFF) Serial.printf(" (RX=%d TX=%d, %u Baud)", p.rx, p.tx, (unsigned)p.baud);
+        if (p.activeRole != UROLE_OFF) {
+            if (p.baud == UART_BAUD_AUTO) Serial.printf(" (RX=%d TX=%d, Baudrate automatisch)", p.rx, p.tx);
+            else Serial.printf(" (RX=%d TX=%d, %u Baud)", p.rx, p.tx, (unsigned)p.baud);
+        }
         if (p.idle)      Serial.print(" - CRSF nur bei RC-System CRSF aktiv");
         if (p.duplicate) Serial.printf(" - %s laeuft schon auf %s", uartRoleName(p.role), ports[0].name);
         Serial.println();

@@ -391,7 +391,9 @@ hr{border:none;border-top:1px solid var(--border);margin:10px 0}
     </div>
     <div class="row" id="row-portb-baud" style="margin-bottom:10px">
       <span class="lbl">Port B Baudrate</span>
-      <input type="number" id="portb-baud" min="300" max="2000000" style="width:120px">
+      <!-- v7.21: Liste aus /rc_common.js mit "Auto" (GPS sucht die Baudrate
+           selbst), ein eigener Wert aus einer Sicherung bleibt erhalten -->
+      <select id="portb-baud"></select>
     </div>
     <div class="row">
       <span class="lbl">Port C (GPS, GPIO27/14)</span>
@@ -810,17 +812,14 @@ function onHwCfg(){
   fillSel('s-src', srcGroups(hw)); sv('s-src', curSSrc);
 }
 // Baudrate beim Wechsel der Port-B-Rolle auf den protokolltypischen Standard
-// vorbelegen (bleibt danach frei editierbar - im Web-UI gibt es anders als
-// im CRSF/Lua-Menue keine 1-Byte-Grenze, die Baudrate ist hier also
-// wirklich frei eingebbar, nicht nur aus einer Liste). Die Standardwerte
-// kommen vom Geraet (s.portb_baud_defaults in /api/config, siehe
-// uartRoleDefaultBaud() in RC_Common/uart_roles.h) statt hier als eigenes,
-// von Hand synchron zu haltendes Objekt dupliziert zu sein - loadConfig()
-// befuellt PORTB_BAUD_DEFAULTS unten.
+// vorbelegen, bei GPS "Auto". Die Standardwerte kommen vom Geraet
+// (s.portb_baud_defaults in /api/config, siehe uartRoleDefaultBaud() in
+// RC_Common/uart_roles.h), die Liste aus /rc_common.js (rcFillBaud) -
+// loadConfig() befuellt PORTB_BAUD_DEFAULTS unten.
 var PORTB_BAUD_DEFAULTS = {};
 function onPortBMode(){
   var m = gi('portb-mode');
-  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0) sv('portb-baud', PORTB_BAUD_DEFAULTS[m]);
+  if (PORTB_BAUD_DEFAULTS[m] !== undefined && PORTB_BAUD_DEFAULTS[m] !== 0 && m !== 4) rcFillBaud(document.getElementById('portb-baud'), PORTB_BAUD_DEFAULTS[m]);
   var row = document.getElementById('row-portb-baud');
   if (row) row.className = 'row'+(m===0?' hidden':'');
 }
@@ -880,7 +879,7 @@ function loadConfig(){
     // ERST befuellt, dann erst der gespeicherte Wert gesetzt.
     fillSelFlat('portb-mode', s.portb_options);
     PORTB_BAUD_DEFAULTS = s.portb_baud_defaults || {};
-    sv('portb-mode', s.portb_role); sv('portb-baud', s.portb_baud); sv('portc-gps', s.portc_gps);
+    sv('portb-mode', s.portb_role); rcFillBaud(document.getElementById('portb-baud'), s.portb_baud); sv('portc-gps', s.portc_gps);
     onPortBMode();
     onRcSys(); onHwCfg();
     var w=cfg.wifi;
@@ -938,7 +937,8 @@ function renderDbg(){
     if(!g.active && !g.pinConflict){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">GPS ist aus (weder Port B noch Port C)</span></div>';}
     else if(g.pinConflict){gp.innerHTML='<div class="row"><span class="lbl">Status</span><span class="badge bg-r">deaktiviert</span></div>'+
       '<div style="font-size:11px;color:var(--sub);margin-top:8px">GPIO27-Konflikt: Port C (GPS) + SBUS gleichzeitig gewaehlt - GPIO27 wird von SBUS UND GPS beansprucht. GPS bleibt deaktiviert, SBUS hat Vorrang. Fuer GPS bitte Einkanal/RC-System auf CRSF stellen.</div>';}
-    else{gp.innerHTML='<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
+    else{gp.innerHTML='<div class="row"><span class="lbl">Baudrate</span><span style="font-family:var(--mono)">'+(g.auto?'Auto ':'')+(g.locked?g.baud:'sucht …')+'</span></div>'+
+      '<div class="row"><span class="lbl">Fix</span><span class="badge '+(g.fix?'bg-g':'bg-r')+'">'+(g.fix?'OK':'kein Fix')+'</span></div>'+
       '<div class="row"><span class="lbl">Satelliten</span><span style="font-family:var(--mono)">'+g.sats+'</span></div>'+
       '<div class="row"><span class="lbl">Geschwindigkeit</span><span style="font-family:var(--mono)">'+g.speed+' km/h</span></div>';}
   }
@@ -1753,7 +1753,8 @@ void WebServerManager::handleApiConfigPost() {
     Serial.printf("[API] Port B Rolle -> %s (wirkt erst nach Neustart)\n", uartRoleName(config.PortB_Role)); }
   else if (jsonGetInt(body, "portb_mode", v)) { config.PortB_Role = uartRoleFromSoundBasisLegacy(v); changed=true;
     Serial.printf("[API] Port B Modus (alt %d) -> %s (wirkt erst nach Neustart)\n", v, uartRoleName(config.PortB_Role)); }
-  if (jsonGetInt(body, "portb_baud", v)) { config.PortB_Baud = (uint32_t)constrain(v,300,2000000); changed=true; }
+  if (jsonGetInt(body, "portb_baud", v)) {   // v7.21: UART_BAUD_AUTO = "Auto"
+    config.PortB_Baud = (uint32_t)v == UART_BAUD_AUTO ? UART_BAUD_AUTO : (uint32_t)constrain(v,300,2000000); changed=true; }
   if (jsonGetInt(body, "portc_gps",  v)) { config.PortC_GPS_Enabled = constrain(v,0,1); changed=true;
     Serial.printf("[API] Port C (GPS) -> %d (wirkt erst nach Neustart)\n", config.PortC_GPS_Enabled); }
 
@@ -2554,6 +2555,9 @@ void WebServerManager::handleApiDebug() {
   j += "\"speed\":"  + String(gpsGetSpeedKmh(), 1) + ",";
   j += "\"sats\":"   + String(gpsGetSatellites())  + ",";
   j += "\"fix\":"    + String(gpsHasFix() ? 1 : 0)  + ",";
+  j += "\"baud\":"   + String(gpsGetBaud()) + ",";               // v7.21: Baudrate "Auto"
+  j += "\"auto\":"   + String(gpsBaudAuto() ? 1 : 0) + ",";
+  j += "\"locked\":" + String(gpsBaudLocked() ? 1 : 0) + ",";
   j += "\"pinConflict\":" + String(gpsPinConflict ? 1 : 0);
   j += "}";
 

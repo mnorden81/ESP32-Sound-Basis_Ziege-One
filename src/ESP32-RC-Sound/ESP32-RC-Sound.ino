@@ -59,7 +59,8 @@
             Port C hat keinen freien Hardware-UART (UART0 = USB/Debug,
             UART1/2 = Port A und B) und laeuft per SoftwareSerial. CRSF
             (420000 Baud) und S.Port sind darauf nicht zuverlaessig moeglich,
-            deshalb bleibt Port C nur GPS an/aus.
+            deshalb bleibt Port C nur GPS an/aus. Die GPS-Baudrate sucht
+            Port C selbst (bis 38400, RC_Common "Auto").
    Port C = GPS (SoftwareSerial GPIO27/14) fuer CRSF-GPS-Telemetrie
             (Geschwindigkeit/Position an den Sender) - unabhaengiger
             An/Aus-Schalter. Kollidiert mit SBUS als Bus-Protokoll (beide
@@ -168,6 +169,11 @@ int      PortC_GPS_Enabled_boot = 0;
 static UartPort portB = {"Port B", nullptr, 32, 33, UROLE_OFF, 0, UROLE_OFF, false, false};
 // Port C (GPS): SoftwareSerial, RX=GPIO27 (GPS-TX), TX=GPIO14 (GPS-RX)
 static SoftwareSerial gpsSoftSerial;
+// Port C: neue Baudrate fuer die GPS-Suche (RC_Common gps_speed, "Auto")
+static void gpsSoftSetBaud(uint32_t baud) {
+    gpsSoftSerial.end();
+    gpsSoftSerial.begin(baud, SWSERIAL_8N1, 27, 14);
+}
 // Liefert den fuer Port B freien Hardware-UART - Port A belegt bereits den
 // jeweils anderen (CRSF=Serial2, SBUS-Familie=Serial1).
 static HardwareSerial* portBFreeSerial() {
@@ -805,9 +811,10 @@ void setup() {
             Serial.println("!!! GPIO27 wird von SBUS UND GPS gleichzeitig belegt -> GPS bleibt deaktiviert !!!");
             Serial.println("!!! Fuer GPS-Speed bitte Einkanal/RC-System auf CRSF (4) stellen. !!!");
         } else {
+            // v7.21: Baudrate automatisch, SoftwareSerial nur bis 38400
             gpsSoftSerial.begin(9600, SWSERIAL_8N1, 27, 14);
-            gpsSpeedInitStream(&gpsSoftSerial);
-            Serial.println("Port C: GPS (SoftwareSerial RX=27 TX=14, 9600 Baud)");
+            gpsSpeedInitStream(&gpsSoftSerial, UART_BAUD_AUTO, gpsSoftSetBaud, 38400);
+            Serial.println("Port C: GPS (SoftwareSerial RX=27 TX=14, Baudrate automatisch bis 38400)");
         }
     }
 

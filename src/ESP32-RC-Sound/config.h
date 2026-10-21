@@ -38,7 +38,8 @@
 // entfaellt; alte NVS-Werte (pbmode 0-5) werden beim ersten Start einmalig
 // umgerechnet (uartRoleFromSoundBasisLegacy).
 // Port C ist ein SoftwareSerial (die drei Hardware-UARTs belegen USB,
-// Port A und Port B) und kann daher nur GPS (9600 Baud) oder Aus.
+// Port A und Port B) und kann daher nur GPS (Baudrate automatisch bis
+// 38400) oder Aus.
 #include "src/RC_Common/uart_roles.h"
 
 // "Mehrfachadress-Erweiterung": statt einer einzelnen Adresse mit

@@ -45,7 +45,7 @@ void test_role_clamp_and_baud() {
     TEST_ASSERT_EQUAL_UINT8(UROLE_RAW, uartRoleClamp(UROLE_RAW));
     TEST_ASSERT_EQUAL_UINT32(420000, uartRoleDefaultBaud(UROLE_CRSF));
     TEST_ASSERT_EQUAL_UINT32(57600,  uartRoleDefaultBaud(UROLE_SPORT));
-    TEST_ASSERT_EQUAL_UINT32(9600,   uartRoleDefaultBaud(UROLE_GPS));
+    TEST_ASSERT_EQUAL_UINT32(UART_BAUD_AUTO, uartRoleDefaultBaud(UROLE_GPS));
     TEST_ASSERT_EQUAL_UINT32(0,      uartRoleDefaultBaud(UROLE_OFF));
 }
 
@@ -75,11 +75,25 @@ void test_role_legacy_maps() {
 
 void test_baud_index() {
     TEST_ASSERT_EQUAL_UINT8(UART_BAUD_COUNT, LuaMenu::optionCount(uartBaudOptions()));
-    TEST_ASSERT_EQUAL_UINT8(0, uartBaudToIndex(9600));
-    TEST_ASSERT_EQUAL_UINT8(6, uartBaudToIndex(420000));
-    TEST_ASSERT_EQUAL_UINT8(4, uartBaudToIndex(100000));   // naechstgelegen: 115200
-    TEST_ASSERT_EQUAL_UINT32(57600, uartBaudFromIndex(3));
+    TEST_ASSERT_EQUAL_UINT8(0, uartBaudToIndex(UART_BAUD_AUTO));
+    TEST_ASSERT_EQUAL_UINT32(UART_BAUD_AUTO, uartBaudFromIndex(0));
+    TEST_ASSERT_EQUAL_UINT8(1, uartBaudToIndex(9600));
+    TEST_ASSERT_EQUAL_UINT8(1, uartBaudToIndex(4800));     // "Auto" nur exakt
+    TEST_ASSERT_EQUAL_UINT8(7, uartBaudToIndex(420000));
+    TEST_ASSERT_EQUAL_UINT8(5, uartBaudToIndex(100000));   // naechstgelegen: 115200
+    TEST_ASSERT_EQUAL_UINT32(57600, uartBaudFromIndex(4));
     TEST_ASSERT_EQUAL_UINT32(UART_BAUD_LIST[UART_BAUD_COUNT - 1], uartBaudFromIndex(200));
+}
+
+void test_baud_auto_start() {
+    TEST_ASSERT_TRUE(uartBaudValid(UART_BAUD_AUTO));
+    TEST_ASSERT_FALSE(uartBaudValid(0));
+    TEST_ASSERT_FALSE(uartBaudValid(100));
+    TEST_ASSERT_EQUAL_UINT32(9600,   uartBaudStart(UROLE_GPS, UART_BAUD_AUTO));
+    TEST_ASSERT_EQUAL_UINT32(420000, uartBaudStart(UROLE_CRSF, UART_BAUD_AUTO));
+    TEST_ASSERT_EQUAL_UINT32(57600,  uartBaudStart(UROLE_SPORT, UART_BAUD_AUTO));
+    TEST_ASSERT_EQUAL_UINT32(115200, uartBaudStart(UROLE_RAW, UART_BAUD_AUTO));
+    TEST_ASSERT_EQUAL_UINT32(38400,  uartBaudStart(UROLE_GPS, 38400));
 }
 
 // ── Lua-Menue ───────────────────────────────────────────────────────────
@@ -248,11 +262,14 @@ void test_settings_sanitize() {
     TEST_ASSERT_EQUAL_UINT16(60, s.wifiTimeout);
     TEST_ASSERT_EQUAL_UINT8(UROLE_OFF, s.role[0]);
     TEST_ASSERT_EQUAL_UINT32(115200, s.baud[0]);
-    TEST_ASSERT_EQUAL_UINT32(9600, s.baud[1]);
+    TEST_ASSERT_EQUAL_UINT32(UART_BAUD_AUTO, s.baud[1]);   // GPS: ungueltig -> Auto
     s.wifiTimeout = 240; s.baud[1] = 38400;
     rcSettingsSanitize(s);
     TEST_ASSERT_EQUAL_UINT16(240, s.wifiTimeout);
     TEST_ASSERT_EQUAL_UINT32(38400, s.baud[1]);
+    s.baud[1] = UART_BAUD_AUTO;
+    rcSettingsSanitize(s);
+    TEST_ASSERT_EQUAL_UINT32(UART_BAUD_AUTO, s.baud[1]);
 }
 
 int main(int, char**) {
@@ -262,6 +279,7 @@ int main(int, char**) {
     RUN_TEST(test_role_duplicate_resolution);
     RUN_TEST(test_role_legacy_maps);
     RUN_TEST(test_baud_index);
+    RUN_TEST(test_baud_auto_start);
     RUN_TEST(test_lua_select_max_from_options);
     RUN_TEST(test_lua_capacity);
     RUN_TEST(test_lua_write_clamps_and_rejects);

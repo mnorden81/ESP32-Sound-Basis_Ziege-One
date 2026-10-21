@@ -9,9 +9,13 @@
  *   GPS-TX  -> Port RX  (Empfang der NMEA-Daten)
  *   GPS-RX  <- Port TX  (Senden der Konfiguration an das GPS)
  *
- * Nach dem Start wird das GPS einmalig per CASIC-Kommando auf 5 Hz gestellt
- * (ATGM336H/AT6558) und auf die Ausgabe von GGA+RMC reduziert. Die Einstellung
- * ist flüchtig und wird bei jedem Start neu gesetzt.
+ * Baudrate fest: nach dem Start wird das GPS einmalig auf 5 Hz (9600 Baud)
+ * bzw. 10 Hz (ab 38400) und die Ausgabe von GGA+RMC gestellt.
+ * Baudrate UART_BAUD_AUTO ("Auto"): der Port sucht die Baudrate selbst,
+ * stellt das GPS auf 115200 Baud und 10 Hz und sucht neu, wenn keine Daten
+ * mehr kommen (siehe gps_autobaud.h). Befehle gehen fuer CASIC (ATGM336H/
+ * AT6558) und u-blox (M8/M9/M10) raus. Die Einstellung ist flüchtig und
+ * wird bei jedem Start neu gesetzt.
  *
  * Benötigte Bibliothek: TinyGPSPlus.
  */
@@ -20,10 +24,17 @@
 
 #include <Arduino.h>
 
-void     gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud); // GPS am UART starten
-// Bereits geoeffneter Datenstrom, z. B. SoftwareSerial (Soundmodul Basis Port C)
-void     gpsSpeedInitStream(Stream* stream);
+// GPS am UART starten, baud = feste Rate oder UART_BAUD_AUTO
+void     gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud);
+// Bereits geoeffneter Datenstrom, z. B. SoftwareSerial (Soundmodul Basis
+// Port C). Fuer "Auto" muss setBaud den Strom auf eine neue Rate stellen;
+// maxBaud begrenzt Suche und Umstellung. Ohne setBaud bleibt baud fest.
+typedef void (*GpsBaudFn)(uint32_t baud);
+void     gpsSpeedInitStream(Stream* stream, uint32_t baud, GpsBaudFn setBaud = nullptr, uint32_t maxBaud = 115200);
 bool     gpsIsActive();        // true, sobald ein Port die Rolle GPS hat
+bool     gpsBaudAuto();        // Baudrate wird automatisch gesucht
+bool     gpsBaudLocked();      // GPS gefunden (bei fester Rate immer true)
+uint32_t gpsGetBaud();         // aktuelle Baudrate des GPS-Ports
 void     gpsSpeedUpdate();     // NMEA einlesen/auswerten + Konfig nach Boot senden
 
 float    gpsGetSpeedKmh();     // aktuelle Geschwindigkeit in km/h

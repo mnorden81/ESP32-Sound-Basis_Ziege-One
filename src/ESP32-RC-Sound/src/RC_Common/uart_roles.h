@@ -26,7 +26,8 @@ const char* uartRoleName(uint8_t role);
 const char* uartRoleOptions();
 // Ungueltige/alte Werte -> UROLE_OFF
 uint8_t     uartRoleClamp(int raw);
-// Protokolltypische Baudrate einer Rolle (0 = keine, Baudrate unveraendert)
+// Vorschlag beim Wechsel der Rolle: Protokoll-Baudrate, bei GPS
+// UART_BAUD_AUTO (0 = keine, Baudrate unveraendert)
 uint32_t    uartRoleDefaultBaud(uint8_t role);
 // Rolle darf nur auf einem Port laufen (S.Port, GPS, Raw haben einen Zustand)
 bool        uartRoleSingleInstance(uint8_t role);
@@ -36,14 +37,22 @@ bool        uartRoleSingleInstance(uint8_t role);
 // deshalb abgeschaltet wurde.
 uint8_t     uartRoleResolveSecond(uint8_t first, uint8_t second, bool* duplicate);
 
-// Baudraten-Auswahl fuer das Lua-Menue (TEXT_SELECTION, 1 Byte). Im Web
-// bleibt die Baudrate frei eingebbar.
-static constexpr uint8_t UART_BAUD_COUNT = 7;
+// Baudraten-Auswahl fuer das Lua-Menue (TEXT_SELECTION, 1 Byte) und das
+// Web-Dropdown. Eintrag 0 ist "Auto" (gespeichert als UART_BAUD_AUTO):
+// GPS sucht die Baudrate selbst (gps_autobaud.h), die anderen Rollen nehmen
+// ihre Protokoll-Baudrate (uartRoleDefaultBaud).
+static constexpr uint32_t UART_BAUD_AUTO = 1;   // keine echte Baudrate
+static constexpr uint8_t UART_BAUD_COUNT = 8;
 extern const uint32_t UART_BAUD_LIST[UART_BAUD_COUNT];
 const char* uartBaudOptions();
-// Index des passenden oder naechstgelegenen Eintrags
+// Index des passenden oder naechstgelegenen Eintrags ("Auto" nur exakt)
 uint8_t     uartBaudToIndex(uint32_t baud);
 uint32_t    uartBaudFromIndex(uint8_t index);
+// Gespeicherter Wert gueltig? (UART_BAUD_AUTO oder 1200..2000000)
+bool        uartBaudValid(uint32_t baud);
+// Baudrate, mit der ein Port startet: "Auto" -> Protokoll-Baudrate der
+// Rolle, bei GPS die erste Rate der Suche (9600)
+uint32_t    uartBaudStart(uint8_t role, uint32_t baud);
 
 // ── Umrechnung alter NVS-Werte (Nummern vor RC_Common 1.0.0) ─────────────
 // Soundmodul Basis bis v7.20: 0 Aus, 1 CRSF, 2 S.Port, 3 Hott (nie

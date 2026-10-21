@@ -81,6 +81,17 @@ function rcFillSelect(sel,options,value){
 }
 function rcRoleName(r){return RC_ROLES.split(';')[r]||RC_ROLES.split(';')[0];}
 function rcRoleDefaultBaud(r){return RC_ROLE_BAUD[r]||0;}
+// Baudraten-Dropdown: Werte aus RC_BAUD_VALUES (Eintrag 0 = "Auto"), ein
+// eigener Wert ausserhalb der Liste bleibt als zusaetzlicher Eintrag erhalten
+function rcFillBaud(sel,cur){
+  if(!sel)return;
+  sel.innerHTML='';
+  var names=RC_BAUDS.split(';');
+  RC_BAUD_VALUES.forEach(function(v,i){var o=document.createElement('option');o.value=v;o.textContent=names[i];sel.appendChild(o);});
+  if(cur!==undefined&&cur!==null&&RC_BAUD_VALUES.indexOf(+cur)<0){var o=document.createElement('option');o.value=cur;o.textContent=cur;sel.appendChild(o);}
+  if(cur!==undefined&&cur!==null)sel.value=String(cur);
+}
+function rcBaudName(v){var i=RC_BAUD_VALUES.indexOf(+v);return i>=0?RC_BAUDS.split(';')[i]:String(v);}
 function rcOtaUpload(file,statusEl,fileInput,onDone){
   if(!file)return;
   if(!confirm('Firmware-Update mit "'+file.name+'" starten? Waehrend des '+
@@ -110,7 +121,9 @@ static void sendCommonJs() {
     head += uartRoleOptions();
     head += "';var RC_BAUDS='";
     head += uartBaudOptions();
-    head += "';var RC_ROLE_BAUD=[";
+    head += "';var RC_BAUD_AUTO=" + String(UART_BAUD_AUTO) + ";var RC_BAUD_VALUES=[";
+    for (uint8_t i = 0; i < UART_BAUD_COUNT; i++) { if (i) head += ','; head += String(UART_BAUD_LIST[i]); }
+    head += "];var RC_ROLE_BAUD=[";
     for (uint8_t r = 0; r < UROLE_COUNT; r++) { if (r) head += ','; head += String(uartRoleDefaultBaud(r)); }
     head += "];\n";
     otaServer->sendHeader("Cache-Control", "max-age=300");
@@ -128,7 +141,7 @@ static void sendUartRoles() {
     }
     j += "],\"bauds\":[";
     for (uint8_t i = 0; i < UART_BAUD_COUNT; i++) { if (i) j += ','; j += String(UART_BAUD_LIST[i]); }
-    j += "]}";
+    j += "],\"auto\":" + String(UART_BAUD_AUTO) + "}";
     otaServer->sendHeader("Cache-Control", "no-cache");
     otaServer->send(200, "application/json", j);
 }

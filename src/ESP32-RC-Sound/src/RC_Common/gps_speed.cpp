@@ -5,22 +5,30 @@
  * und wertet es mit TinyGPS++ aus. Die Ground Speed kommt direkt
  * aus dem GPS und muss auf dem Modul nicht berechnet werden.
  *
- * Nach dem Boot wird das GPS einmalig per CASIC-Kommando konfiguriert
- * (Updaterate + reduzierte NMEA-Ausgabe), damit die höhere Rate zuverlässig
- * durch die 9600-Baud-Leitung passt.
+ * Baudrate fest: kurz nach dem Boot wird das GPS einmalig auf 5 Hz (bei
+ * 9600 Baud) bzw. 10 Hz (ab 38400) und GGA+RMC gestellt.
+ * Baudrate "Auto" (UART_BAUD_AUTO): gps_autobaud sucht die Rate, stellt das
+ * GPS auf 115200 (SoftwareSerial: 38400) und 10 Hz und sucht neu, wenn
+ * keine Saetze mehr kommen. Befehle gehen jeweils fuer CASIC (ATGM336H)
+ * und u-blox raus, die Einstellung ist fluechtig.
  */
 #ifdef ARDUINO   // nur Firmware, nicht in den Host-Tests
 #include "gps_speed.h"
+#include "gps_autobaud.h"
+#include "uart_roles.h"
 #include <TinyGPS++.h>
 
 // ── Konfiguration ──────────────────────────────────────────────────────────
-#define GPS_UPDATE_MS  200    // Positions-Updateintervall: 200=5Hz, 100=10Hz, 500=2Hz, 1000=1Hz
-#define GPS_CFG_DELAY  800    // ms nach Init warten, bevor die Konfig gesendet wird
+#define GPS_CFG_DELAY  800    // ms nach Init warten, bevor die Konfig gesendet wird (feste Baudrate)
 
 // ── interner Zustand ───────────────────────────────────────────────────────
 // UART (oder SoftwareSerial) kommt vom Projekt, siehe uart_ports.cpp.
 static Stream*         gpsSerial = nullptr;
+static HardwareSerial* gpsHw     = nullptr;
+static GpsBaudFn       gpsSetBaud = nullptr;   // nullptr = Baudrate fest
 static TinyGPSPlus     gps;
+static GpsAutobaud     autobaud;
+static uint32_t        gpsBaud   = 9600;
 
 static float    speedKmh    = 0.0f;
 static uint8_t  sats        = 0;
@@ -33,58 +41,125 @@ static uint16_t altMeters   = 0;
 static unsigned long initMs  = 0;
 static bool          cfgSent = false;
 
-// ── NMEA-Satz mit korrekter Prüfsumme senden ($<body>*CS\r\n) ──────────────
-static void gpsSendNmea(const char* body) {
-    uint8_t cs = 0;
-    for (const char* p = body; *p; ++p) cs ^= (uint8_t)*p;
-    char line[96];
-    snprintf(line, sizeof(line), "$%s*%02X\r\n", body, cs);
-    gpsSerial->print(line);
+// ── Befehle senden ─────────────────────────────────────────────────────────
+static void sendBytes(const uint8_t* b, uint16_t n) {
+    if (n) gpsSerial->write(b, n);
 }
 
-// ── einmalige GPS-Konfiguration (ATGM336H / AT6558, CASIC) ─────────────────
-static void gpsSendConfig() {
-    // Updaterate setzen (PCAS02, Intervall in ms)
-    char rate[24];
-    snprintf(rate, sizeof(rate), "PCAS02,%d", GPS_UPDATE_MS);
-    gpsSendNmea(rate);
-    // Nur GGA + RMC ausgeben (GGA=Position/Höhe/Sats, RMC=Speed/Kurs) – spart
-    // Bandbreite, damit die höhere Rate bei 9600 Baud sicher durchpasst.
-    gpsSendNmea("PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0");
+static void sendNmea(const char* body) {
+    char line[48];
+    sendBytes((const uint8_t*)line, gpsCmdCasicNmea(body, line, sizeof(line)));
+}
+
+// GPS auf eine hoehere Baudrate stellen (gesendet mit der alten Rate)
+static void gpsSendBaud(uint32_t baud) {
+    uint8_t buf[32];
+    sendBytes(buf, gpsCmdCasicBaud(baud, (char*)buf, sizeof(buf)));
+    sendBytes(buf, gpsCmdUbxBaud(baud, buf, sizeof(buf)));
+    sendBytes(buf, gpsCmdUbxBaudM10(baud, buf, sizeof(buf)));
+    gpsSerial->flush();
+    delay(60);   // GPS stellt erst nach dem letzten Byte um
+}
+
+// Messrate und Saetze passend zur Baudrate (CASIC + u-blox)
+static void gpsSendRate(uint32_t baud) {
+    uint16_t ms = gpsRateForBaud(baud);
+    char body[24];
+    snprintf(body, sizeof(body), "PCAS02,%u", (unsigned)ms);
+    sendNmea(body);
+    // Nur GGA + RMC (GGA=Position/Hoehe/Sats, RMC=Speed/Kurs)
+    sendNmea("PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0");
+    uint8_t buf[24];
+    sendBytes(buf, gpsCmdUbxRate(ms, buf, sizeof(buf)));
+    sendBytes(buf, gpsCmdUbxRateM10(ms, buf, sizeof(buf)));
+    static const uint8_t off[] = {0x01, 0x02, 0x03, 0x05};   // GLL, GSA, GSV, VTG
+    for (uint8_t id : off) sendBytes(buf, gpsCmdUbxMsgOff(id, buf, sizeof(buf)));
+    Serial.printf("[GPS] Konfig gesendet: %u Baud, %u ms (%u Hz), GGA+RMC\n",
+                  (unsigned)baud, (unsigned)ms, (unsigned)(1000 / ms));
+}
+
+static void hwSetBaud(uint32_t baud) {
+    gpsHw->flush();
+    gpsHw->updateBaudRate(baud);
+}
+
+static void applyBaud(uint32_t baud) {
+    if (baud != gpsBaud) { gpsSetBaud(baud); gpsBaud = baud; }
+    while (gpsSerial->available() > 0) gpsSerial->read();   // Reste der alten Rate
+}
+
+static void startCommon(uint32_t baud, uint32_t maxBaud) {
+    initMs  = millis();
+    cfgSent = false;
+    if (baud == UART_BAUD_AUTO && gpsSetBaud) {
+        autobaud.begin(initMs, maxBaud);
+        gpsBaud = autobaud.baud();
+        Serial.printf("[GPS] Baudrate automatisch (bis %u)\n", (unsigned)maxBaud);
+    } else {
+        gpsSetBaud = nullptr;   // feste Rate
+    }
 }
 
 // ── Initialisierung ────────────────────────────────────────────────────────
 void gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
     // RX liest NMEA, TX sendet die Konfiguration an das GPS.
-    serial->begin(baud, SERIAL_8N1, rxPin, txPin);
-    gpsSerial = serial;
-    initMs  = millis();
-    cfgSent = false;
-    Serial.printf("[GPS] Init: RX=GPIO%d TX=GPIO%d  %u Baud\n", rxPin, txPin, (unsigned)baud);
+    uint32_t start = uartBaudStart(UROLE_GPS, baud);
+    serial->begin(start, SERIAL_8N1, rxPin, txPin);
+    gpsSerial  = serial;
+    gpsHw      = serial;
+    gpsSetBaud = hwSetBaud;
+    gpsBaud    = start;
+    Serial.printf("[GPS] Init: RX=GPIO%d TX=GPIO%d  %u Baud\n", rxPin, txPin, (unsigned)start);
+    startCommon(baud, 115200);
 }
 
-void gpsSpeedInitStream(Stream* stream) {
-    gpsSerial = stream;
-    initMs  = millis();
-    cfgSent = false;
+void gpsSpeedInitStream(Stream* stream, uint32_t baud, GpsBaudFn setBaud, uint32_t maxBaud) {
+    gpsSerial  = stream;
+    gpsHw      = nullptr;
+    gpsSetBaud = setBaud;
+    gpsBaud    = uartBaudStart(UROLE_GPS, baud);
+    startCommon(baud, maxBaud);
 }
 
-bool gpsIsActive() { return gpsSerial != nullptr; }
+bool     gpsIsActive()   { return gpsSerial != nullptr; }
+bool     gpsBaudAuto()   { return gpsSetBaud != nullptr; }
+bool     gpsBaudLocked() { return gpsSetBaud ? autobaud.locked() : true; }
+uint32_t gpsGetBaud()    { return gpsBaud; }
 
 // ── zyklisches Einlesen/Auswerten ──────────────────────────────────────────
 void gpsSpeedUpdate() {
     if (!gpsSerial) return;
-    // Konfiguration einmalig kurz nach dem Boot senden (GPS ist dann bereit,
-    // und ein evtl. Boot-Glitch auf dem TX-Pin ist längst vorbei).
-    if (!cfgSent && (millis() - initMs) > GPS_CFG_DELAY) {
-        gpsSendConfig();
-        cfgSent = true;
-        Serial.printf("[GPS] Konfig gesendet: %d ms Intervall (%d Hz), GGA+RMC\n",
-                      GPS_UPDATE_MS, 1000 / GPS_UPDATE_MS);
-    }
 
-    while (gpsSerial->available() > 0) {
-        gps.encode((char)gpsSerial->read());
+    if (gpsSetBaud) {
+        // Automatisch: Zeichen gehen an TinyGPS++ und an die Suche
+        while (gpsSerial->available() > 0) {
+            uint8_t c = (uint8_t)gpsSerial->read();
+            autobaud.feed(c);
+            gps.encode((char)c);
+        }
+        uint8_t a = autobaud.poll(millis());
+        if (a == GPSB_SWITCH) {
+            Serial.printf("[GPS] gefunden bei %u Baud, stelle auf %u um\n",
+                          (unsigned)gpsBaud, (unsigned)autobaud.target());
+            gpsSendBaud(autobaud.target());
+        }
+        if (a != GPSB_IDLE) applyBaud(autobaud.baud());
+        if (a == GPSB_LOCKED) {
+            Serial.printf("[GPS] Baudrate %u%s\n", (unsigned)gpsBaud,
+                          autobaud.switchFailed() ? " (Umstellen nicht moeglich)" : "");
+            gpsSendRate(gpsBaud);
+        }
+        if (a == GPSB_LOST) Serial.println("[GPS] keine Daten, suche Baudrate neu");
+    } else {
+        // Feste Baudrate: Konfiguration einmalig kurz nach dem Boot senden (GPS
+        // ist dann bereit, ein evtl. Boot-Glitch auf dem TX-Pin ist vorbei)
+        if (!cfgSent && (millis() - initMs) > GPS_CFG_DELAY) {
+            gpsSendRate(gpsBaud);
+            cfgSent = true;
+        }
+        while (gpsSerial->available() > 0) {
+            gps.encode((char)gpsSerial->read());
+        }
     }
 
     if (gps.satellites.isValid()) sats = (uint8_t)gps.satellites.value();

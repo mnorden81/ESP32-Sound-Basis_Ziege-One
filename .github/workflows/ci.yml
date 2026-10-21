@@ -1,6 +1,6 @@
 name: CI
 
-# Gemeinsame CI aller ESP32-Module (RC_Common 1.0.0):
+# Gemeinsame CI aller ESP32-Module (RC_Common 1.1.0):
 #   1. src/ESP32-RC-Sound/src/RC_Common/ gegen MANIFEST.sha256 pruefen (Kopie
 #      unveraendert) und die Host-Tests der Basis ausfuehren (CRSF, Lua-Menue,
 #      LED, Einstellungen).

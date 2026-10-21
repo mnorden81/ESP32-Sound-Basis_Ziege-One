@@ -4,7 +4,7 @@
 // gewaehlte Rolle und Baudrate). uartPortsBegin() startet daraus:
 //   CRSF   -> Router der CRSF-Bibliothek (Modulkette), nur wenn Port A CRSF ist
 //   S.Port -> sport_lipo (FLVSS/MLVSS-Zellspannungen)
-//   GPS    -> gps_speed
+//   GPS    -> gps_speed (bei "Auto" sucht der Port die Baudrate selbst)
 //   Raw    -> UART offen, Firmware wertet nichts aus
 // S.Port, GPS und Raw laufen nur auf einem Port; doppelt gewaehlt bleibt
 // der zweite Port aus. CRSF darf auf beiden Ports laufen (Kette verzweigt).
@@ -24,7 +24,7 @@ struct UartPort {
     uint8_t         rx;
     uint8_t         tx;
     uint8_t         role;       // gewaehlte Rolle (UROLE_*)
-    uint32_t        baud;       // gewaehlte Baudrate
+    uint32_t        baud;       // gewaehlte Baudrate, UART_BAUD_AUTO = automatisch
     // von uartPortsBegin() gesetzt:
     uint8_t         activeRole; // tatsaechlich gestartete Rolle
     bool            duplicate;  // aus, weil die Rolle schon auf einem anderen Port laeuft

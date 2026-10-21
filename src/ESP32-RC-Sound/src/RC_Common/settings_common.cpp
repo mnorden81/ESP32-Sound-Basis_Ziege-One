@@ -13,7 +13,7 @@ void rcSettingsSanitize(RcCommonSettings& s) {
     if (s.wifiTimeout < 5 || s.wifiTimeout > 240) s.wifiTimeout = 60;
     for (int i = 0; i < 2; i++) {
         s.role[i] = uartRoleClamp(s.role[i]);
-        if (s.baud[i] < 1200 || s.baud[i] > 2000000) s.baud[i] = uartRoleDefaultBaud(s.role[i]);
+        if (!uartBaudValid(s.baud[i])) s.baud[i] = uartRoleDefaultBaud(s.role[i]);
         if (s.baud[i] == 0) s.baud[i] = 115200;
     }
 }
@@ -66,12 +66,13 @@ bool rcSettingsLoad(Preferences& p, RcCommonSettings& s, RcLegacyRoleMap legacyP
     else if (p.isKey("pcmode")) { s.role[1] = soundMap(p.getInt("pcmode", 0)); c = true; }
     else if (p.isKey("pcgps"))  { s.role[1] = p.getInt("pcgps", 0) ? UROLE_GPS : UROLE_OFF; c = true; }
 
-    // Baudraten: Soundmodul hatte sie je Port, der Multiswitch nur fuer GPS
-    uint32_t gpsBaud = p.isKey("gpsbaud") ? p.getUInt("gpsbaud", 9600) : 9600;
+    // Baudraten: Soundmodul hatte sie je Port, der Multiswitch nur fuer GPS.
+    // GPS war bisher fest eingestellt und sucht ab RC_Common 1.1.0 selbst.
     if (p.isKey("pbbaud")) s.baud[0] = (uint32_t)p.getInt("pbbaud", (int)s.baud[0]);
-    else if (b) s.baud[0] = s.role[0] == UROLE_GPS ? gpsBaud : uartRoleDefaultBaud(s.role[0]);
+    else if (b) s.baud[0] = uartRoleDefaultBaud(s.role[0]);
     if (p.isKey("pcbaud")) s.baud[1] = (uint32_t)p.getInt("pcbaud", (int)s.baud[1]);
-    else if (c) s.baud[1] = s.role[1] == UROLE_GPS ? gpsBaud : uartRoleDefaultBaud(s.role[1]);
+    else if (c) s.baud[1] = uartRoleDefaultBaud(s.role[1]);
+    for (int i = 0; i < 2; i++) if (s.role[i] == UROLE_GPS) s.baud[i] = UART_BAUD_AUTO;
 
     rcSettingsSanitize(s);
     return true;

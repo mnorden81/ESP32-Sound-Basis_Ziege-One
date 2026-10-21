@@ -17,7 +17,7 @@ uint32_t uartRoleDefaultBaud(uint8_t role) {
     switch (role) {
         case UROLE_CRSF:  return 420000;
         case UROLE_SPORT: return 57600;
-        case UROLE_GPS:   return 9600;
+        case UROLE_GPS:   return UART_BAUD_AUTO;
         case UROLE_RAW:   return 115200;
         default:          return 0;
     }
@@ -33,14 +33,15 @@ uint8_t uartRoleResolveSecond(uint8_t first, uint8_t second, bool* duplicate) {
     return dup ? UROLE_OFF : second;
 }
 
-const uint32_t UART_BAUD_LIST[UART_BAUD_COUNT] = {9600, 19200, 38400, 57600, 115200, 230400, 420000};
+const uint32_t UART_BAUD_LIST[UART_BAUD_COUNT] = {UART_BAUD_AUTO, 9600, 19200, 38400, 57600, 115200, 230400, 420000};
 
-const char* uartBaudOptions() { return "9600;19200;38400;57600;115200;230400;420000"; }
+const char* uartBaudOptions() { return "Auto;9600;19200;38400;57600;115200;230400;420000"; }
 
 uint8_t uartBaudToIndex(uint32_t baud) {
-    uint8_t best = 0;
+    if (baud == UART_BAUD_AUTO) return 0;
+    uint8_t best = 1;
     uint32_t bestDiff = 0xFFFFFFFFu;
-    for (uint8_t i = 0; i < UART_BAUD_COUNT; i++) {
+    for (uint8_t i = 1; i < UART_BAUD_COUNT; i++) {
         uint32_t d = baud > UART_BAUD_LIST[i] ? baud - UART_BAUD_LIST[i] : UART_BAUD_LIST[i] - baud;
         if (d < bestDiff) { bestDiff = d; best = i; }
     }
@@ -49,6 +50,17 @@ uint8_t uartBaudToIndex(uint32_t baud) {
 
 uint32_t uartBaudFromIndex(uint8_t index) {
     return UART_BAUD_LIST[index < UART_BAUD_COUNT ? index : UART_BAUD_COUNT - 1];
+}
+
+bool uartBaudValid(uint32_t baud) {
+    return baud == UART_BAUD_AUTO || (baud >= 1200 && baud <= 2000000);
+}
+
+uint32_t uartBaudStart(uint8_t role, uint32_t baud) {
+    if (baud != UART_BAUD_AUTO && baud != 0) return baud;
+    if (role == UROLE_GPS) return 9600;
+    uint32_t b = uartRoleDefaultBaud(role);
+    return b ? b : 115200;
 }
 
 uint8_t uartRoleFromSoundBasisLegacy(int legacy) {
