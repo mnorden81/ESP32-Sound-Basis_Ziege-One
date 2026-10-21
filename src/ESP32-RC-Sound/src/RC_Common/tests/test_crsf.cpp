@@ -1,20 +1,24 @@
 /*
- * test/test_crsf/test_main.cpp  –  ESP32-RC-Sound
+ * tests/test_crsf.cpp  –  RC_Common
  *
- * Unity-Tests fuer die gemeinsame CRSF-Bibliothek (lib/CRSF_ESP32), laufen
- * unter dem PlatformIO "native"-Environment ohne ESP32:
+ * Unity-Tests fuer die gemeinsame CRSF-Bibliothek (CRSF_ESP32), laufen auf
+ * dem Rechner ohne ESP32 (siehe run_tests.sh):
  *
- *   pio test -e native -f test_crsf
+ *   sh RC_Common/tests/run_tests.sh
  *
  * Die CRSF-Klasse liest und schreibt ueber einen FakeStream statt ueber
  * einen UART. Geprueft wird gegen die CRSF-Spezifikation
  * (github.com/tbs-fpv/tbs-crsf-spec, crsf.md).
  */
 
+// Nur fuer die Host-Tests: liegt im Sketch-Ordner, die Arduino-IDE und
+// PlatformIO kompilieren die Datei mit, ohne dieses Define bleibt sie leer.
+#ifdef RC_COMMON_HOST_TEST
+
 #include <unity.h>
 #include <vector>
 #include <string>
-#include "crsf_esp32.h"
+#include "CRSF_ESP32/crsf_esp32.h"
 
 // ── Hilfen ─────────────────────────────────────────────────────────────
 
@@ -24,7 +28,9 @@ public:
     std::vector<uint8_t> rx;
     std::vector<uint8_t> tx;
     size_t pos = 0;
+    int writeRoom = 4096;   // fuer availableForWrite(), Router-Tests
     int available() override { return (int)(rx.size() - pos); }
+    int availableForWrite() override { return writeRoom; }
     int read() override { return pos < rx.size() ? rx[pos++] : -1; }
     size_t write(const uint8_t* b, size_t n) override { tx.insert(tx.end(), b, b + n); return n; }
     void feed(const std::vector<uint8_t>& bytes) { rx.insert(rx.end(), bytes.begin(), bytes.end()); }
@@ -65,12 +71,16 @@ static void assert_valid_frame(const std::vector<uint8_t>& f) {
 }
 
 static FakeStream io;
+static FakeStream portB, portC;
 static CRSF crsf;
 
 void setUp(void) {
     io = FakeStream();
+    portB = FakeStream();
+    portC = FakeStream();
     crsf = CRSF();
     crsf.attach_stream(&io);
+    crsf_set_millis(0);
 }
 void tearDown(void) {}
 
@@ -268,6 +278,93 @@ static void test_text_selection_chunks(void) {
     TEST_ASSERT_EQUAL_INT(0, lastRemaining);
 }
 
+// ── Router (seit 1.1.0) ────────────────────────────────────────────────
+
+static void test_router_forwards_rc_frames_down(void) {
+    crsf.attach_router_streams(&portB, &portC);
+    uint16_t ch[16] = {0};
+    std::vector<uint8_t> f = channels_frame(ch);
+    io.feed(f);
+    crsf.read_packets(0);
+    TEST_ASSERT_TRUE(portB.tx == f);
+    TEST_ASSERT_TRUE(portC.tx == f);
+    TEST_ASSERT_EQUAL_UINT32(1, crsf.getFwdDown());
+}
+
+static void test_router_keeps_frames_for_own_address(void) {
+    crsf.setDeviceAddress(0xC4);
+    crsf.attach_router_streams(&portB, nullptr);
+    io.feed(frame(CRSF_FRAMETYPE_PARAMETER_READ, {0xC4, 0xEF, 1, 0}, 0xEE));   // an uns
+    io.feed(frame(CRSF_FRAMETYPE_PARAMETER_READ, {0xC6, 0xEF, 1, 0}, 0xEE));   // weiter hinten
+    crsf.read_packets(0);
+    TEST_ASSERT_EQUAL_UINT32(1, crsf.getFwdDown());
+    TEST_ASSERT_EQUAL_HEX8(0xC6, portB.tx[3]);
+}
+
+static void test_router_forwards_up_and_detects_duplicate_address(void) {
+    crsf.setDeviceAddress(0xC4);
+    crsf.attach_router_streams(&portB, nullptr);
+    std::vector<uint8_t> info = frame(CRSF_FRAMETYPE_DEVICE_INFO,
+        {0xEA, 0xC4, 'X', 0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 3, 0});
+    portB.feed(info);
+    crsf.route_packets();
+    TEST_ASSERT_TRUE(io.tx == info);
+    TEST_ASSERT_EQUAL_UINT32(1, crsf.getFwdUp());
+    TEST_ASSERT_TRUE(crsf.isDuplicateAddress());
+}
+
+static void test_router_never_forwards_between_b_and_c(void) {
+    crsf.attach_router_streams(&portB, &portC);
+    portB.feed(frame(CRSF_FRAMETYPE_DEVICE_PING, {0x00, 0xEA}));
+    crsf.route_packets();
+    TEST_ASSERT_EQUAL_UINT(0, portC.tx.size());
+    TEST_ASSERT_TRUE(io.tx.size() > 0);
+}
+
+static void test_router_queue_drops_oldest_rc_frame_when_full(void) {
+    crsf.attach_router_streams(&portB, nullptr);
+    portB.writeRoom = 0;   // UART B blockiert: alles landet in der Warteschlange
+    uint16_t ch[16] = {0};
+    for (int k = 0; k < CRSF_ROUTER_QUEUE + 3; k++) {
+        ch[0] = (uint16_t)(200 + k);
+        io.feed(channels_frame(ch));
+    }
+    crsf.read_packets(0);
+    TEST_ASSERT_EQUAL_UINT32(3, crsf.getFwdDropped());
+    portB.writeRoom = 4096;
+    crsf.route_packets();
+    // die neuesten 8 Frames kommen in Reihenfolge an, der erste ist Nr. 3
+    TEST_ASSERT_EQUAL_UINT(CRSF_ROUTER_QUEUE * 26, portB.tx.size());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)(200 + 3), portB.tx[3]);
+}
+
+static void test_router_inactive_without_ports(void) {
+    uint16_t ch[16] = {0};
+    io.feed(channels_frame(ch));
+    crsf.read_packets(0);
+    crsf.route_packets();
+    TEST_ASSERT_FALSE(crsf.isRouterActive());
+    TEST_ASSERT_EQUAL_UINT32(0, crsf.getFwdDown());
+}
+
+static void test_last_rc_frame_time(void) {
+    TEST_ASSERT_EQUAL_UINT32(0, crsf.getLastRcFrameMs());
+    crsf_set_millis(1234);
+    uint16_t ch[16] = {0};
+    io.feed(channels_frame(ch));
+    crsf.read_packets(0);
+    TEST_ASSERT_EQUAL_UINT32(1234, crsf.getLastRcFrameMs());
+}
+
+static void test_folder_from_array_matches_list(void) {
+    const uint8_t kids[] = {1, 2, 3};
+    crsf.send_param_response_CRSF_FOLDER(0, 0, "ROOT", kids, 3);
+    std::vector<uint8_t> a = io.tx;
+    io.tx.clear();
+    crsf.send_param_response_CRSF_FOLDER(0, 0, "ROOT", {1, 2, 3});
+    TEST_ASSERT_TRUE(a == io.tx);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_crc8_d5_matches_reference);
@@ -285,5 +382,15 @@ int main(int, char**) {
     RUN_TEST(test_mwset_command_crc);
     RUN_TEST(test_mwprop_has_command_crc);
     RUN_TEST(test_text_selection_chunks);
+    RUN_TEST(test_router_forwards_rc_frames_down);
+    RUN_TEST(test_router_keeps_frames_for_own_address);
+    RUN_TEST(test_router_forwards_up_and_detects_duplicate_address);
+    RUN_TEST(test_router_never_forwards_between_b_and_c);
+    RUN_TEST(test_router_queue_drops_oldest_rc_frame_when_full);
+    RUN_TEST(test_router_inactive_without_ports);
+    RUN_TEST(test_last_rc_frame_time);
+    RUN_TEST(test_folder_from_array_matches_list);
     return UNITY_END();
 }
+
+#endif // RC_COMMON_HOST_TEST

@@ -92,7 +92,7 @@ Benötigte Bibliotheken:
 - Bolder Flight Systems SBUS 8.1.4
 - EspSoftwareSerial 8.2.0 und TinyGPSPlus 1.1.0 (für GPS, werden immer mitkompiliert)
 
-Der CRSF-Code (ursprünglich [CRSF_ESP32](https://github.com/Ziege-One/CRSF_ESP32)) liegt als gemeinsame Bibliothek im Sketch unter `src/CRSF_ESP32/`. Die Arduino-IDE kompiliert diesen Unterordner automatisch mit, eine separate Installation ist nicht nötig. Dieselbe Bibliothek liegt als identische Kopie auch im Multiswitch-Projekt; Änderungen dort mit nachziehen (siehe `src/CRSF_ESP32/README.md`).
+Seit v7.21 braucht die Firmware den **Arduino-ESP32-Core 3.0.7** (wie die Multiswitch-Firmwaren). Gemeinsamer Code aller ESP32-Module liegt im Sketch unter `src/RC_Common/` (CRSF-Bibliothek, ursprünglich [CRSF_ESP32](https://github.com/Ziege-One/CRSF_ESP32), dazu UART-Rollen, S.Port, GPS, Lua-Menü-Tabelle, gemeinsame Einstellungen, WLAN-Failsafe, OTA). Die Arduino-IDE kompiliert diesen Unterordner automatisch mit. Derselbe Ordner liegt als identische Kopie in Multiswitch und Soundmodul Mini; Änderungen dort mit nachziehen (siehe `src/RC_Common/README.md`).
 
 Im Menü **Werkzeuge → Partition Scheme** ein OTA-fähiges Schema wählen, sonst funktioniert das Firmware-Update per WLAN nicht. Der Ordner `lib/` und `test/` gehören **nicht** in den Sketch-Ordner — nur der Inhalt von `src/`, sonst meldet der Compiler „multiple definition of …".
 
@@ -130,7 +130,7 @@ Bei RC-System ELRS (CRSF) ist das Modul vollständig über das native Parameterm
 | Upload meldet `sd_write` | Karte voll, schreibgeschützt oder defekt | Serial-Log ansehen: die Firmware gibt bei jedem Fehlschlag freien Kartenspeicher, freigegebene Datei-Handles und freien Heap aus |
 | Firmware startet, aber kein AP sichtbar | GPIO 13 beim Start nicht auf LOW | Taster/Brücke gegen GND beim Einschalten, oder Failsafe abwarten |
 | GPS meldet „GPIO27-Konflikt" | Port C und SBUS gleichzeitig aktiv | RC-System auf ELRS (CRSF) stellen, GPS auf Port B legen oder GPS deaktivieren |
-| Port B bleibt inaktiv, „kein freier Hardware-UART" | Port B würde denselben UART wie Port A belegen | RC-System und Port-B-Rolle prüfen — die Kollisionsprüfung verhindert das bewusst |
+| Port B steht auf CRSF, aber nichts passiert | Die Modulkette (CRSF-Router) läuft nur, wenn Port A CRSF ist | RC-System auf ELRS (CRSF) stellen |
 | „multiple definition of …" beim Kompilieren | `lib/` und `test/` wurden in den Sketch-Ordner kopiert | Nur den Inhalt von `src/` verwenden |
 
 ### Hinweis für Mitentwickler: `max_files` in `SD.begin()`
@@ -154,24 +154,21 @@ src/ESP32-RC-Sound/
   config.cpp/.h          Persistente Konfiguration (NVS), Migration
   WebServerManager.cpp   Weboberfläche, REST-API, OTA
   XT_I2S_Audio.cpp/.h    WAV-Wiedergabe über I2S, SD-Zugriff
-  src/CRSF_ESP32/        Gemeinsame CRSF-Bibliothek (Protokoll, Telemetrie, Discovery)
-  sport_lipo.cpp/.h      S.Port-Telemetrie (Port B)
-  gps_speed.cpp/.h       GPS-Auswertung (Port C oder Port B)
-  port_function.cpp/.h   Port-B-Rollen-Registry
-lib/port_registry/       Hardwareunabhängiger Spiegel der Registry
+  src/RC_Common/         Gemeinsame Basis aller ESP32-Module (identische Kopie,
+                         CRSF mit Router, UART-Rollen, S.Port, GPS, Lua-Menü,
+                         Einstellungen, WLAN-Failsafe, OTA; eigene Host-Tests)
+lib/sound_slots/         Altes Artefakt, nur noch für test/test_sound_slots
 test/                    Unity-Tests, laufen ohne ESP32
 docs/                    Projektbeschreibung (Word)
 ```
 
-`lib/port_registry/` spiegelt die Port-B-Logik hardwareunabhängig, damit sie per `pio test -e native` ohne Board geprüft werden kann. **Beide Seiten müssen bei Änderungen von Hand synchron gehalten werden.**
-
-CI baut bei jedem Push die Firmware und führt die Host-Tests aus.
+`src/RC_Common/` darf in diesem Repo nicht einzeln geändert werden: die CI prüft die Kopie gegen `MANIFEST.sha256` und führt ihre Host-Tests aus (`tests/run_tests.sh`). Danach baut sie die Firmware und führt `pio test -e native` aus.
 
 ---
 
 ## Versionsstand
 
-Aktuell: **v7.20**
+Aktuell: **v7.21**
 
 Wichtige Schritte der V7-Linie:
 
@@ -188,6 +185,7 @@ Wichtige Schritte der V7-Linie:
 | 7.17 | Fix: Lautstärkeänderung während einer laufenden Web-Testwiedergabe (Sound-Slots 1–24) wirkte bisher erst beim nächsten Trigger, nicht auf die bereits laufende Wiedergabe (`handleSound()`) |
 | 7.19 | CRSF-Code als gemeinsame Bibliothek `src/CRSF_ESP32/` (v1.0.0, auch im Multiswitch). Fixes laut CRSF-Spezifikation: Empfangs-Parser verliert keine Frames mehr, die über zwei Aufrufe verteilt ankommen (vorher verloren und als CRC-Fehler gezählt); Link-Statistik-Felder korrekt zugeordnet; Command-CRC (0xBA) korrigiert; FOLDER-Eintrag ohne überzähliges Byte. Host-Tests in `test/test_crsf`. |
 | 7.20 | Port B kann zusätzlich die Rolle **GPS** übernehmen (Hardware-UART GPIO32/33, Baudrate wählbar, Web-UI und Lua-Menü). Damit lassen sich CRSF, S.Port und GPS auf Port B wählen. Port C bleibt GPS an/aus: es gibt keinen dritten freien Hardware-UART (UART0 = USB/Debug), mit SoftwareSerial sind CRSF (420000 Baud) und S.Port nicht zuverlässig. Steht Port B auf GPS, bleibt Port C aus. GPS-Telemetrie kommt von dem Port, auf dem GPS läuft. |
+| 7.21 | **Gemeinsame Basis RC_Common 1.1.0** (gleich in Multiswitch und Soundmodul Mini). Arduino-ESP32-Core 3.0.7 (PlatformIO über pioarduino) statt 2.0.17. CRSF-Bibliothek 1.1.0 mit Router: Port B mit Rolle CRSF reicht jetzt Frames zwischen Port A und Port B weiter (Modulkette), statt nur mitzulesen. Port-B-Rollen mit gemeinsamen Nummern: Aus, CRSF, S.Port, GPS, Raw (Hott entfällt, war nie umgesetzt); der alte Wert wird beim ersten Start umgerechnet, ein gespeichertes GPS ging bisher beim Laden verloren. WLAN, Modul-Adresse und Port B/C liegen unter den gemeinsamen NVS-Schlüsseln. Lua-Menü als Tabelle (`buildLuaMenu()`), Feld-IDs unverändert; Feld 171 heißt jetzt „Port B Rolle" mit neuer Reihenfolge. **SBUS-Zeitlimit neu:** kommen 2 s lang keine SBUS-Frames, gilt der Bus als verloren (bisher nur Failsafe-Bit). WLAN-Failsafe und OTA-Upload aus RC_Common. Web-API: `portb_role` statt `portb_mode` (alte Sicherungen werden beim Import umgerechnet). Entfernt: `port_function.*`, `lib/port_registry`, `test/test_native`, `test/test_crsf` (Tests jetzt in RC_Common). **GPS-Baudrate „Auto“** (Vorgabe für GPS, wie Betaflight): Der Port sucht die Baudrate des GPS selbst, stellt es auf 115200 Baud und 10 Hz um (ATGM336H und u-blox) und sucht neu, wenn 3 s keine Daten kommen. Port C (SoftwareSerial) sucht immer automatisch, höchstens 38400 Baud. Port-B-Baudrate in der Weboberfläche jetzt als Auswahlliste mit „Auto“. |
 | 7.18 | Fix: CRSF-"Parameter Version Number" im DEVICE_INFO-Frame war fest `0x00` (`send_device_info()`, crsf_esp32.cpp) – Konfiguratoren mit persistentem Parameter-Cache (TBS Agent) erkannten dadurch neue/geänderte Lua-Felder nicht automatisch und zeigten weiter ihr altes Menü. Jetzt wird die Firmware-Version mitgegeben, die ohnehin bei jeder Änderung hochgezählt wird. EdgeTX-Lua-Skripte waren nicht betroffen (bauen ihr Menü bei jedem Lauf neu auf). |
 
 Dieses Repository enthält nur die V7-Linie. Ältere Stände (V5, V6) sind getrennte Projekte und liegen nicht hier.

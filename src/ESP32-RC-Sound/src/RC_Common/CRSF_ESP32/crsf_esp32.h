@@ -2,10 +2,10 @@
 #define CRSF_H
 
 // CRSF_ESP32 - gemeinsame CRSF-Bibliothek fuer Soundmodul und Multiswitch.
-// Jedes Projekt traegt eine identische Kopie dieses Ordners; Aenderungen
-// immer in allen Kopien nachziehen und CRSF_ESP32_VERSION hochzaehlen.
-// Aenderungshistorie: README.md in diesem Ordner.
-#define CRSF_ESP32_VERSION "1.0.0"
+// Teil von RC_Common: jedes Projekt traegt eine identische Kopie des
+// Ordners RC_Common; Aenderungen immer in allen Kopien nachziehen und
+// CRSF_ESP32_VERSION hochzaehlen. Aenderungshistorie: README.md hier.
+#define CRSF_ESP32_VERSION "1.1.0"
 
 #include "crsf_platform.h"
 #include "crsf_esp32_protocol.h"
@@ -15,6 +15,23 @@
 
 #define BAUD_RATE 420000
 #define CHANNEL_MASK 0x07FF
+
+// Router fuer Modulketten (seit 1.1.0, aus RC-Multiswitch v4.01)
+#define CRSF_ROUTER_QUEUE 8      // Sendewarteschlange je Port (Frames)
+#define CRSF_UART_RX_BUF  1024   // UART-Empfangspuffer (Bytes)
+#define CRSF_UART_TX_BUF  512    // UART-Sendepuffer (Bytes)
+
+// Ein Port des Routers: Empfangs-Parser + Sendewarteschlange ganzer Frames.
+struct CrsfPort {
+    Stream* ser = nullptr;
+    uint8_t rx[CRSF_PACKET_SIZE];
+    uint8_t rxIdx = 0;
+    uint8_t rxLen = 0;
+    uint8_t q[CRSF_ROUTER_QUEUE][CRSF_PACKET_SIZE];
+    uint8_t qLen[CRSF_ROUTER_QUEUE];
+    uint8_t qHead  = 0;
+    uint8_t qCount = 0;
+};
 
 // CRC8 ueber Frame-Typ + Payload (Polynom 0xD5, Haupt-CRC jedes Frames)
 uint8_t crc8(const uint8_t* ptr, uint8_t len);
@@ -27,13 +44,33 @@ public:
 
     CRSF();
 #ifdef ARDUINO
-    // 4. Parameter "baud" (Default = BAUD_RATE/420000) ermoeglicht eine
-    // zweite CRSF-Instanz (z. B. Port B des Soundmoduls) mit frei waehlbarer
-    // Baudrate. serialPort == nullptr faellt auf &Serial2 zurueck.
+    // 4. Parameter "baud" (Default = BAUD_RATE/420000). serialPort ==
+    // nullptr faellt auf Serial1 zurueck (der ESP32-C3 hat kein Serial2).
+    // Seit 1.1.0 mit groesseren UART-Puffern (vor begin()).
     void init_crsf(HardwareSerial *serialPort, uint8_t rxPin, uint8_t txPin, uint32_t baud = BAUD_RATE);
+
+    // Router fuer die Modulkette (seit 1.1.0): Port A (init_crsf) ist der
+    // Eingang vom Empfaenger, B und C fuehren zu weiteren Modulen. nullptr =
+    // Port nicht in der Kette. Nach init_crsf() aufrufen.
+    void init_router(HardwareSerial* portB, uint8_t bRx, uint8_t bTx,
+                     HardwareSerial* portC, uint8_t cRx, uint8_t cTx,
+                     uint32_t bBaud = BAUD_RATE, uint32_t cBaud = BAUD_RATE);
 #endif
     // Bereits geoeffneten Datenstrom verwenden (Host-Tests, andere UARTs).
-    void attach_stream(Stream* stream) { serial_data = stream; }
+    void attach_stream(Stream* stream) { serial_data = stream; portA_.ser = stream; }
+    // Router mit bereits geoeffneten Datenstroemen (Host-Tests).
+    void attach_router_streams(Stream* portB, Stream* portC);
+
+    // B/C lesen, nach A weiterleiten, Warteschlangen abarbeiten. Jeden Loop
+    // nach read_packets() aufrufen; ohne aktive Kette ohne Wirkung.
+    void route_packets();
+    bool     isRouterActive() const { return routerActive; }
+    uint32_t getFwdDown()    const { return fwdDown; }    // A -> B/C
+    uint32_t getFwdUp()      const { return fwdUp; }      // B/C -> A
+    uint32_t getFwdDropped() const { return fwdDropped; } // Warteschlange voll
+    uint32_t getDownCrcErrors() const { return downCrcErrors; }
+    // Ein Modul weiter hinten in der Kette meldet unsere Adresse
+    bool     isDuplicateAddress() const { return duplicateAddress; }
 
     void read_packets(uint8_t debug);
     void send_packets(byte* buffer, size_t length, uint8_t debug);
@@ -49,6 +86,8 @@ public:
     void send_param_response_CRSF_TEXT_SELECTION(uint8_t param_id, uint8_t parent,  const char* name, const char* options, uint8_t val, uint8_t min, uint8_t max);
     void send_param_response_CRSF_STRING(uint8_t param_id, uint8_t parent,  const char* name, const char* value, uint8_t val, uint8_t max_length);
     void send_param_response_CRSF_FOLDER(uint8_t param_id, uint8_t parent, const char* name, std::initializer_list<uint8_t> children);
+    // Kinderliste als Feld (seit 1.1.0, fuer das tabellengesteuerte Lua-Menue)
+    void send_param_response_CRSF_FOLDER(uint8_t param_id, uint8_t parent, const char* name, const uint8_t* children, uint8_t count);
     void send_param_response_CRSF_INFO(uint8_t param_id, uint8_t parent,  const char* name, const char* info);
 
     void send_tele_GPS(int32_t latitude, int32_t longitude, uint16_t groundspeed, uint16_t heading, uint16_t altitude, uint8_t satellites);
@@ -111,6 +150,9 @@ public:
     uint32_t getDevicePings()   const { return devicePingsRx; }
     uint32_t getParamReads()    const { return paramReadsRx; }
     uint32_t getParamWrites()   const { return paramWritesRx; }
+    // Zeitpunkt (millis) des letzten RC-Kanal-Frames, 0 = noch keiner.
+    // Basis fuer das LED-Muster "Frames da, aber kein RC-Link".
+    unsigned long getLastRcFrameMs() const { return lastRcFrameMs; }
 
 private:
     void updateChannels();
@@ -118,6 +160,22 @@ private:
     void updateDevice_Info();
     void print_channels();
     void crsfDataReceive();
+
+    // Router
+    static bool isSyncByte(uint8_t b);
+    bool parseByte(CrsfPort& p, uint8_t data);   // true = gueltiger Frame in p.rx
+    void routeFromA(const uint8_t* f, uint8_t n);
+    void routeFromDown(CrsfPort& p);
+    void enqueue(CrsfPort& p, const uint8_t* f, uint8_t n);
+    void serviceQueue(CrsfPort& p);
+    CrsfPort portA_, portB_, portC_;   // portA_ nur Sendewarteschlange
+    bool     routerActive  = false;
+    uint32_t fwdDown       = 0;
+    uint32_t fwdUp         = 0;
+    uint32_t fwdDropped    = 0;
+    uint32_t downCrcErrors = 0;
+    bool     duplicateAddress = false;
+    unsigned long lastRcFrameMs = 0;
 
     // serial_data/linkStats/info sind Member (nicht global), damit mehrere
     // CRSF-Instanzen (Port A und Port B) sich nicht gegenseitig stoeren.

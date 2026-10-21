@@ -4,8 +4,8 @@
 /*
  * lib/sound_slots  –  ESP32-RC-Sound (host-seitiger Spiegel)
  *
- * Nach dem gleichen Muster wie lib/port_registry (siehe dort fuer die
- * ausfuehrliche Begruendung): eine reine, hardwareunabhaengige Kopie der
+ * Nach dem gleichen Muster wie das fruehere lib/port_registry (bis v7.20):
+ * eine reine, hardwareunabhaengige Kopie der
  * CRSF-Feld-ID-Vergabe rund um die Sound-Slots, damit sie per Unity unter
  * dem PlatformIO "native"-Environment getestet werden kann (test/test_
  * sound_slots), OHNE ESP32-Hardware.
