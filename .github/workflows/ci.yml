@@ -1,13 +1,12 @@
 name: CI
 
-# Empfehlung 4 (V4-Vergleich): wie im parallel entwickelten Projekt
-# "ESP32-RC-Sound V4" laufen bei jedem Push/PR zwei Schritte automatisch:
-#   1. Die echte Firmware fuer den ESP32 bauen (esp32dev) - reiner Compile-
-#      Check, kein Flashen/keine Hardware noetig.
-#   2. Die hardwareunabhaengigen Host-Tests (native/Unity, siehe lib/
-#      port_registry und test/test_native) ausfuehren.
-# Ein gruener Haken bedeutet: baut, und die Port-B-Kernlogik verhaelt sich
-# noch wie erwartet.
+# Gemeinsame CI aller ESP32-Module (RC_Common 1.0.0):
+#   1. src/ESP32-RC-Sound/src/RC_Common/ gegen MANIFEST.sha256 pruefen (Kopie
+#      unveraendert) und die Host-Tests der Basis ausfuehren (CRSF, Lua-Menue,
+#      LED, Einstellungen).
+#   2. Die Firmware fuer den ESP32 bauen (esp32dev, Arduino-Core 3.0.7) und
+#      das Image hochladen (firmware.bin = OTA-Update).
+#   3. Die projekteigenen Host-Tests (native/Unity, test/test_sound_slots).
 
 on:
   push:
@@ -16,8 +15,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  rc-common:
+    name: RC_Common pruefen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Kopie unveraendert (MANIFEST.sha256)
+        run: cd src/ESP32-RC-Sound/src/RC_Common && sha256sum -c --quiet MANIFEST.sha256
+      - name: Host-Tests
+        run: sh src/ESP32-RC-Sound/src/RC_Common/tests/run_tests.sh
+
   build-firmware:
     name: Build ESP32 firmware (esp32dev)
+    needs: rc-common
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -32,6 +42,12 @@ jobs:
 
       - name: Build esp32dev environment
         run: pio run -e esp32dev
+
+      - name: Firmware hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESP32-RC-Sound-firmware
+          path: .pio/build/esp32dev/firmware.bin
 
   host-tests:
     name: Host tests (native/Unity)

@@ -13,17 +13,16 @@
  * konfigurierbare Zusatz-Ports:
  *   Port A = RC-Eingang, fest (CRSF oder SBUS-Familie, GPIO16 + 17/27)
  *   Port B = echter zweiter Hardware-UART auf GPIO32/33, Rolle waehlbar
- *            (siehe PortBMode weiter unten): Aus, S.Port-Master
- *            (LiPo-Telemetrie an FrSky-Empfaenger), ein zweites
- *            CRSF-faehiges Geraet, Hott-Telemetrie (Menue vorhanden,
- *            Treiber folgt) oder ein generischer Raw-UART mit frei
- *            waehlbarer Baudrate fuer eigene Geraete.
+ *            (siehe uart_roles.h in src/RC_Common): Aus, S.Port-Master
+ *            (LiPo-Telemetrie an FrSky-Empfaenger), Modulkette
+ *            (CRSF-Router, weitere CRSF-Module), GPS oder ein Raw-UART
+ *            mit frei waehlbarer Baudrate fuer eigene Geraete.
  *   Port C = GPS (SoftwareSerial, GPIO27/14), per PortC_GPS_Enabled
  *            unabhaengig ein-/ausschaltbar. Kollidiert mit SBUS als
  *            Bus-Protokoll (beide belegen GPIO27) - siehe gpsPinConflict
  *            im .ino.
  * Migration: ein NVS-Stand mit Hardware_Config 3 oder 4 wird beim Laden
- * auf 2 (V3) begrenzt. PortB_Mode/PortC_GPS_Enabled starten dabei auf
+ * auf 2 (V3) begrenzt. PortB_Role/PortC_GPS_Enabled starten dabei auf
  * "Aus", siehe loadConfig() in config.cpp.
  *
  * WLAN kann zusaetzlich zum GPIO13-Boot-Schalter zur Laufzeit
@@ -33,30 +32,14 @@
 
 #include <Arduino.h>
 
-// Rollen fuer Port B (siehe Erklaerung oben). PORTB_HOTT ist im Menue/in
-// der Konfiguration waehlbar, aber funktional noch ein Platzhalter - es
-// wird noch keine Hott-Telemetrie gesendet/empfangen (kein Treiber
-// vorhanden, anders als bei CRSF und S.Port).
-enum PortBMode {
-    PORTB_OFF   = 0,
-    PORTB_CRSF  = 1,
-    PORTB_SPORT = 2,
-    PORTB_HOTT  = 3,   // in Vorbereitung
-    PORTB_RAW   = 4,
-    PORTB_GPS   = 5    // NEU v7.20: NMEA-GPS am Hardware-UART (wie Port C)
-};
-// Anzahl Eintraege im PortBMode-Enum oben - siehe port_function.cpp (Rollen-
-// Registry: Web-UI und CRSF/Lua-Menue lesen ihre Optionsliste von dort statt
-// sie zusaetzlich hier von Hand zu duplizieren).
-static constexpr uint8_t PORTB_FUNCTION_COUNT = 6;
-// Protokolltypische Standard-Baudraten - Web-UI/CRSF-Menue setzen die
-// Baudrate beim Wechsel des Modus auf diesen Wert vor, sie bleibt aber immer
-// frei ueberschreibbar (bei PORTB_RAW gibt es keinen sinnvollen Standard).
-static constexpr uint32_t PORTB_BAUD_DEFAULT_CRSF  = 420000;
-static constexpr uint32_t PORTB_BAUD_DEFAULT_SPORT = 57600;
-static constexpr uint32_t PORTB_BAUD_DEFAULT_HOTT  = 19200;
-static constexpr uint32_t PORTB_BAUD_DEFAULT_RAW   = 115200;
-static constexpr uint32_t PORTB_BAUD_DEFAULT_GPS   = 9600;
+// Rollen fuer Port B kommen ab v7.21 aus RC_Common (src/RC_Common/
+// uart_roles.h, gleiche Nummern in allen Modulen): UROLE_OFF, UROLE_CRSF,
+// UROLE_SPORT, UROLE_GPS, UROLE_RAW. Die alte Rolle "Hott" (nie umgesetzt)
+// entfaellt; alte NVS-Werte (pbmode 0-5) werden beim ersten Start einmalig
+// umgerechnet (uartRoleFromSoundBasisLegacy).
+// Port C ist ein SoftwareSerial (die drei Hardware-UARTs belegen USB,
+// Port A und Port B) und kann daher nur GPS (9600 Baud) oder Aus.
+#include "src/RC_Common/uart_roles.h"
 
 // "Mehrfachadress-Erweiterung": statt einer einzelnen Adresse mit
 // 2-Bit/Schalter-"Ebenen" werden bis zu RCSOUND_NUM_GROUPS unabhaengige
@@ -122,8 +105,8 @@ struct ConfigData {
     int SBUS_Gruppen_Mode[RCSOUND_NUM_GROUPS];
 
     // Port-Modell - siehe ausfuehrliche Erklaerung am Dateianfang.
-    int      PortB_Mode;        // siehe enum PortBMode - Default PORTB_OFF (0)
-    uint32_t PortB_Baud;        // Baudrate Port B, frei waehlbar (Vorbelegung je nach Modus)
+    uint8_t  PortB_Role;        // UROLE_* (uart_roles.h) - Default UROLE_OFF
+    uint32_t PortB_Baud;        // Baudrate Port B, frei waehlbar (Vorbelegung je nach Rolle)
     int      PortC_GPS_Enabled; // 0=Aus,1=An - ersetzt die alte Kopplung an Hardware_Config==4
 
     uint8_t sport_poll_id[2];    // S.Port Physical Poll-ID Sensor 1+2 (z.B. 0xA1, 0x22)

@@ -228,11 +228,16 @@ void CRSF::set_crsf_channel(uint8_t ch, uint16_t value) {
 #ifdef ARDUINO
 void CRSF::init_crsf(HardwareSerial *serialPort, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
   // serialPort wird tatsaechlich verwendet (nicht hart "&Serial2"), damit
-  // eine zweite Instanz auf Port B nicht ebenfalls auf Serial2 landet und
-  // Port A den UART wegnimmt. nullptr faellt auf Serial2 zurueck.
-  HardwareSerial* port = serialPort ? serialPort : &Serial2;
+  // eine zweite Instanz nicht ebenfalls auf Serial2 landet. nullptr faellt
+  // auf Serial1 zurueck (gibt es auf allen ESP32-Varianten, Serial2 nicht).
+  HardwareSerial* port = serialPort ? serialPort : &Serial1;
+  // Groessere Puffer (vor begin()), damit weitergeleitete Frames nicht
+  // blockieren und bei kurzen Loop-Pausen (Web-UI) nichts verloren geht.
+  port->setRxBufferSize(CRSF_UART_RX_BUF);
+  port->setTxBufferSize(CRSF_UART_TX_BUF);
   port->begin(baud, SERIAL_8N1, rxPin, txPin);
   serial_data = port;
+  portA_.ser = port;
 #if DEBUG_CRSF
   Serial.println("Initializing CRSF...");
 #endif
@@ -262,6 +267,7 @@ void CRSF::crsfDataReceive() {
 
         case CRSF_FRAMETYPE_RC_CHANNELS_PACKED:
             updateChannels();
+            lastRcFrameMs = millis();
 #if DEBUG_CRSF_TYPE
             //Serial.println("📤 CRSF_FRAMETYPE_RC_CHANNELS_PACKED");
 #endif             
@@ -425,6 +431,8 @@ void CRSF::read_packets(uint8_t debug) {
                 // Puffer gespeichert - es wird hier bewusst kein zweites Mal
                 // geschrieben.
                 validFramesRx++;
+                // Router: vor crsfDataReceive(), der Puffer ist noch unveraendert
+                routeFromA(crfs_buffer, length + 2);
                 crsfDataReceive();
                 if (debug) {
                     Serial.print("RX-Buffer: ");
@@ -462,6 +470,142 @@ void CRSF::read_packets(uint8_t debug) {
             byte_index = 0;
         }
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Router fuer Modulketten (seit 1.1.0, aus RC-Multiswitch v4.01)
+//  Store-and-Forward: nur vollstaendige Frames mit gueltiger CRC werden
+//  unveraendert weitergegeben.
+//    A -> B und C : alles ausser Extended-Frames an die eigene Adresse
+//    B/C -> A     : alles
+//    B <-> C      : nie
+//  Frames ohne Extended-Header (Typ < 0x28, z.B. RC-Kanaele 0x16 und
+//  Link-Statistik 0x14) haben keine Zieladresse und gehen immer weiter.
+// ════════════════════════════════════════════════════════════════════
+#ifdef ARDUINO
+void CRSF::init_router(HardwareSerial* portB, uint8_t bRx, uint8_t bTx,
+                       HardwareSerial* portC, uint8_t cRx, uint8_t cTx,
+                       uint32_t bBaud, uint32_t cBaud) {
+    HardwareSerial* s[2]    = {portB, portC};
+    uint8_t         rx[2]   = {bRx, cRx};
+    uint8_t         tx[2]   = {bTx, cTx};
+    uint32_t        baud[2] = {bBaud, cBaud};
+    for (int i = 0; i < 2; i++) {
+        if (!s[i]) continue;
+        s[i]->setRxBufferSize(CRSF_UART_RX_BUF);
+        s[i]->setTxBufferSize(CRSF_UART_TX_BUF);
+        s[i]->begin(baud[i], SERIAL_8N1, rx[i], tx[i]);
+    }
+    attach_router_streams(portB, portC);
+}
+#endif
+
+void CRSF::attach_router_streams(Stream* portB, Stream* portC) {
+    portB_.ser = portB;
+    portC_.ser = portC;
+    routerActive = (portB_.ser || portC_.ser);
+}
+
+bool CRSF::isSyncByte(uint8_t b) {
+    return b == CRSF_SYNC_byte || b == CRSF_ADDRESS_RADIO_TRANSMITTER ||
+           b == CRSF_ADDRESS_CRSF_TRANSMITTER || b == CRSF_ADDRESS_ELRS_LUA ||
+           b == CRSF_ADDRESS_CRSF_RECEIVER || b == CRSF_ADDRESS_BROADCAST;
+}
+
+// Gleicher Ablauf wie read_packets() fuer Port A
+bool CRSF::parseByte(CrsfPort& p, uint8_t data) {
+    if (p.rxIdx == 0) {
+        if (isSyncByte(data)) p.rx[p.rxIdx++] = data;
+        return false;
+    }
+    if (p.rxIdx == 1) {
+        if (data < 2 || data > (CRSF_PACKET_SIZE - 2)) { p.rxIdx = 0; return false; }
+        p.rxLen = data;
+        p.rx[p.rxIdx++] = data;
+        return false;
+    }
+    p.rx[p.rxIdx++] = data;
+    if (p.rxIdx < p.rxLen + 2) return false;
+    p.rxIdx = 0;
+    if (data == crc8(&p.rx[2], p.rxLen - 1)) return true;
+    downCrcErrors++;
+    return false;
+}
+
+void CRSF::routeFromA(const uint8_t* f, uint8_t n) {
+    if (!routerActive) return;
+    uint8_t type = f[2];
+    // Extended-Frame an die eigene Adresse: nur intern. Ausnahme 0xC8
+    // (Adresse 8 = Flight-Controller/Sync), die gilt auf dem Bus als Broadcast.
+    if (type >= 0x28 && n > 4 && f[3] == deviceAddress &&
+        deviceAddress != CRSF_SYNC_byte) return;
+    if (portB_.ser) enqueue(portB_, f, n);
+    if (portC_.ser) enqueue(portC_, f, n);
+    fwdDown++;
+}
+
+void CRSF::routeFromDown(CrsfPort& p) {
+    while (p.ser->available() > 0) {
+        if (!parseByte(p, (uint8_t)p.ser->read())) continue;
+        uint8_t n = p.rxLen + 2;
+        // Doppelte Adresse: ein Modul weiter hinten meldet unsere Adresse
+        if (p.rx[2] == CRSF_FRAMETYPE_DEVICE_INFO && n > 5 && p.rx[4] == deviceAddress)
+            duplicateAddress = true;
+        if (portA_.ser) enqueue(portA_, p.rx, n);
+        fwdUp++;
+    }
+}
+
+// Ganzen Frame senden oder einreihen - nie einen Teil-Frame schreiben.
+void CRSF::enqueue(CrsfPort& p, const uint8_t* f, uint8_t n) {
+    if (p.qCount == 0 && p.ser->availableForWrite() >= n) {
+        p.ser->write(f, n);
+        return;
+    }
+    if (p.qCount >= CRSF_ROUTER_QUEUE) {
+        // Voll: aeltesten RC-Kanal-Frame verwerfen (Aktualitaet vor
+        // Vollstaendigkeit). Ohne RC-Frame in der Schlange wird ein neuer
+        // RC-Frame verworfen, alle anderen Frames verdraengen den aeltesten.
+        int victim = -1;
+        for (uint8_t i = 0; i < p.qCount; i++) {
+            uint8_t k = (p.qHead + i) % CRSF_ROUTER_QUEUE;
+            if (p.q[k][2] == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) { victim = i; break; }
+        }
+        fwdDropped++;
+        if (victim < 0) {
+            if (f[2] == CRSF_FRAMETYPE_RC_CHANNELS_PACKED) return;
+            victim = 0;
+        }
+        // Eintrag 'victim' entfernen, Rest nachruecken
+        for (uint8_t i = victim; i + 1 < p.qCount; i++) {
+            uint8_t a = (p.qHead + i) % CRSF_ROUTER_QUEUE;
+            uint8_t b = (p.qHead + i + 1) % CRSF_ROUTER_QUEUE;
+            memcpy(p.q[a], p.q[b], p.qLen[b]);
+            p.qLen[a] = p.qLen[b];
+        }
+        p.qCount--;
+    }
+    uint8_t k = (p.qHead + p.qCount) % CRSF_ROUTER_QUEUE;
+    memcpy(p.q[k], f, n);
+    p.qLen[k] = n;
+    p.qCount++;
+}
+
+void CRSF::serviceQueue(CrsfPort& p) {
+    while (p.qCount > 0 && p.ser->availableForWrite() >= p.qLen[p.qHead]) {
+        p.ser->write(p.q[p.qHead], p.qLen[p.qHead]);
+        p.qHead = (p.qHead + 1) % CRSF_ROUTER_QUEUE;
+        p.qCount--;
+    }
+}
+
+void CRSF::route_packets() {
+    if (!routerActive || !portA_.ser) return;
+    if (portB_.ser) routeFromDown(portB_);
+    if (portC_.ser) routeFromDown(portC_);
+    serviceQueue(portA_);
+    if (portB_.ser) serviceQueue(portB_);
+    if (portC_.ser) serviceQueue(portC_);
 }
 
 void CRSF::send_rc_channels_packed() {
@@ -851,11 +995,18 @@ void CRSF::send_param_response_CRSF_STRING(uint8_t param_id, uint8_t parent, con
 }
 
 void CRSF::send_param_response_CRSF_FOLDER(uint8_t param_id, uint8_t parent, const char* name, std::initializer_list<uint8_t> children) {
+    uint8_t buf[CRSF_PACKET_SIZE];
+    uint8_t n = 0;
+    for (uint8_t c : children) { if (n < sizeof(buf)) buf[n++] = c; }
+    send_param_response_CRSF_FOLDER(param_id, parent, name, buf, n);
+}
+
+void CRSF::send_param_response_CRSF_FOLDER(uint8_t param_id, uint8_t parent, const char* name, const uint8_t* children, uint8_t count) {
 
     deviceReadReplyPending = false;
 
     uint8_t len_name = strlen(name) + 1; // len + null terminator
-    uint8_t len_children = children.size();
+    uint8_t len_children = count;
 
     // Typ, Ziel, Quelle, Nr, Chunks, Parent, Datentyp (7) + Name + Kinder
     // + 0xFF-Terminator + CRC. Vor v1.0.0 war len um 1 zu gross, dadurch
@@ -877,8 +1028,8 @@ void CRSF::send_param_response_CRSF_FOLDER(uint8_t param_id, uint8_t parent, con
 
     // List_of_children
     int packet_count = 9;
-    for (uint8_t c : children) {
-        packet[packet_count + len_name] = c; 
+    for (uint8_t i = 0; i < count; i++) {
+        packet[packet_count + len_name] = children[i];
         packet_count ++;
     }
     

@@ -65,8 +65,6 @@ private:
   // ins jeweils inaktive OTA-Flash-Segment schreiben, dann neu starten
   // (siehe Kommentare in WebServerManager.cpp). Braucht eine OTA-faehige
   // Partitionstabelle - siehe platformio.ini.
-  static void      handleApiOtaUpdate();
-  static void      handleApiOtaUpdateData();
   // Manueller WLAN-Schalter im Web-Tab "WiFi" (entspricht Lua-Feld 174) -
   // schaltet enableAP()/disableAP() sofort, ohne Neustart und ohne die
   // Konfiguration zu aendern (siehe Kommentare in WebServerManager.cpp).

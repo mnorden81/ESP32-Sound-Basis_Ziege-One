@@ -1,29 +1,25 @@
 /*
- * gps_speed.cpp  –  ESP32-RC-Sound  (Port C)
+ * gps_speed.cpp  –  RC_Common (aus ESP32-RC-Sound v7)
  *
- * Siehe gps_speed.h. Liest ein NMEA-GPS über Software-Serial (Port C, RX=GPIO27,
- * TX=GPIO14) oder seit v7.20 über den Hardware-UART von Port B und wertet es
- * mit TinyGPS++ aus. Die Ground Speed kommt direkt
+ * Siehe gps_speed.h. Liest ein NMEA-GPS über einen UART (Rolle "GPS")
+ * und wertet es mit TinyGPS++ aus. Die Ground Speed kommt direkt
  * aus dem GPS und muss auf dem Modul nicht berechnet werden.
  *
  * Nach dem Boot wird das GPS einmalig per CASIC-Kommando konfiguriert
  * (Updaterate + reduzierte NMEA-Ausgabe), damit die höhere Rate zuverlässig
  * durch die 9600-Baud-Leitung passt.
  */
+#ifdef ARDUINO   // nur Firmware, nicht in den Host-Tests
 #include "gps_speed.h"
-#include <SoftwareSerial.h>   // EspSoftwareSerial
 #include <TinyGPS++.h>
 
 // ── Konfiguration ──────────────────────────────────────────────────────────
-#define GPS_RX_PIN     27     // GPS-TX -> ESP32 GPIO 27 (PWM-Pin 4)
-#define GPS_TX_PIN     14     // ESP32 -> GPS-RX  GPIO 14 (PWM-Pin 3)
-#define GPS_BAUD       9600   // NMEA-Baudrate
 #define GPS_UPDATE_MS  200    // Positions-Updateintervall: 200=5Hz, 100=10Hz, 500=2Hz, 1000=1Hz
 #define GPS_CFG_DELAY  800    // ms nach Init warten, bevor die Konfig gesendet wird
 
 // ── interner Zustand ───────────────────────────────────────────────────────
-static SoftwareSerial gpsSoftSerial;          // Port C
-static Stream*        gpsSerial = nullptr;    // Port C (Software) oder Port B (Hardware)
+// UART (oder SoftwareSerial) kommt vom Projekt, siehe uart_ports.cpp.
+static Stream*         gpsSerial = nullptr;
 static TinyGPSPlus     gps;
 
 static float    speedKmh    = 0.0f;
@@ -58,23 +54,19 @@ static void gpsSendConfig() {
 }
 
 // ── Initialisierung ────────────────────────────────────────────────────────
-void gpsSpeedInit() {
-    // Voll-Duplex-Software-Serial: RX=GPIO27 (lesen), TX=GPIO14 (konfigurieren).
-    // S.Port (UART1, 32/33) und CRSF (UART2, 16/17) bleiben unberührt.
-    gpsSoftSerial.begin(GPS_BAUD, SWSERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-    gpsSerial = &gpsSoftSerial;
-    initMs  = millis();
-    cfgSent = false;
-    Serial.printf("[GPS] Init: RX=GPIO%d TX=GPIO%d  %d Baud\n", GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
-}
-
-// v7.20: GPS an Port B (Hardware-UART), Signatur passend zur Port-B-Registry
-void gpsSpeedInitHw(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
+void gpsSpeedInit(HardwareSerial* serial, uint8_t rxPin, uint8_t txPin, uint32_t baud) {
+    // RX liest NMEA, TX sendet die Konfiguration an das GPS.
     serial->begin(baud, SERIAL_8N1, rxPin, txPin);
     gpsSerial = serial;
     initMs  = millis();
     cfgSent = false;
-    Serial.printf("[GPS] Init Port B: RX=GPIO%d TX=GPIO%d  %u Baud\n", rxPin, txPin, (unsigned)baud);
+    Serial.printf("[GPS] Init: RX=GPIO%d TX=GPIO%d  %u Baud\n", rxPin, txPin, (unsigned)baud);
+}
+
+void gpsSpeedInitStream(Stream* stream) {
+    gpsSerial = stream;
+    initMs  = millis();
+    cfgSent = false;
 }
 
 bool gpsIsActive() { return gpsSerial != nullptr; }
@@ -83,7 +75,7 @@ bool gpsIsActive() { return gpsSerial != nullptr; }
 void gpsSpeedUpdate() {
     if (!gpsSerial) return;
     // Konfiguration einmalig kurz nach dem Boot senden (GPS ist dann bereit,
-    // und ein evtl. Boot-Glitch auf GPIO14 ist längst vorbei).
+    // und ein evtl. Boot-Glitch auf dem TX-Pin ist längst vorbei).
     if (!cfgSent && (millis() - initMs) > GPS_CFG_DELAY) {
         gpsSendConfig();
         cfgSent = true;
@@ -124,3 +116,5 @@ int32_t  gpsGetLatE7()       { return latE7; }
 int32_t  gpsGetLonE7()       { return lonE7; }
 uint16_t gpsGetHeadingCdeg() { return headingCdeg; }
 uint16_t gpsGetAltMeters()   { return altMeters; }
+
+#endif // ARDUINO
