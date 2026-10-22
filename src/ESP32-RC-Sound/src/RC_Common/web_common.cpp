@@ -70,7 +70,10 @@ function rcErrText(c){
   var m={update_begin:'Update konnte nicht starten (Partition ohne OTA?)',
     bad_file:'Keine Firmware-Datei (.bin fuer OTA, nicht das Komplett-Image)',
     flash_write:'Schreiben in den Flash fehlgeschlagen',aborted:'Upload abgebrochen',
-    update_end:'Datei unvollstaendig oder beschaedigt'};
+    update_end:'Datei unvollstaendig oder beschaedigt',
+    no_fs:'Kein Flash-Speicher (Partitionsschema mit SPIFFS waehlen)',bad_data:'Keine gueltige Konfiguration',
+    too_big:'Konfiguration zu gross',write:'Schreiben in den Flash fehlgeschlagen',
+    bad_name:'Ungueltiger Dateiname',not_found:'Backup nicht gefunden',offline:'Modul nicht erreichbar'};
   return m[c]||c||'unbekannter Fehler';
 }
 function rcFillSelect(sel,options,value){
@@ -92,13 +95,21 @@ function rcFillBaud(sel,cur){
   if(cur!==undefined&&cur!==null)sel.value=String(cur);
 }
 function rcBaudName(v){var i=RC_BAUD_VALUES.indexOf(+v);return i>=0?RC_BAUDS.split(';')[i]:String(v);}
-function rcOtaUpload(file,statusEl,fileInput,onDone){
+// before (optional): laeuft nach der Bestaetigung vor dem Upload und darf
+// ein Promise liefern, z. B. ein automatisches Backup (rcBackupSnapshot)
+function rcOtaUpload(file,statusEl,fileInput,onDone,before){
   if(!file)return;
   if(!confirm('Firmware-Update mit "'+file.name+'" starten? Waehrend des '+
       'Uploads die Spannungsversorgung des Moduls NICHT unterbrechen '+
       '- moeglichst ueber ESC/Akku bestromt, nicht nur ueber USB. '+
       'Das Modul startet danach automatisch neu.')){ if(fileInput)fileInput.value=''; return; }
   var st=function(t){ if(statusEl)statusEl.textContent=t; };
+  if(fileInput)fileInput.value='';
+  var go=function(){ rcOtaSend(file,st,onDone); };
+  if(before){ st('Einstellungen sichern …'); Promise.resolve().then(before).then(go,go); }
+  else go();
+}
+function rcOtaSend(file,st,onDone){
   st('Hochladen … (0%)');
   var fd=new FormData(); fd.append('file',file,file.name);
   var x=new XMLHttpRequest();
@@ -112,7 +123,46 @@ function rcOtaUpload(file,statusEl,fileInput,onDone){
   // Kann auch heissen: Update erfolgreich, Modul startet schon neu
   x.onerror=function(){ st('Verbindung unterbrochen – Update war evtl. trotzdem erfolgreich (neu verbinden und pruefen).'); };
   x.send(fd);
-  if(fileInput)fileInput.value='';
+}
+// Einstellungs-Backups im Flash (config_backup.cpp, /api/backup/*). Den
+// Inhalt liefert das Projekt (dieselben Daten wie beim Export als Datei).
+function rcBackupReq(method,url,body){
+  var o={method:method};
+  if(body!==undefined){o.body=body;o.headers={'Content-Type':'application/json'};}
+  return fetch(url,o).then(function(r){return r.json();}).catch(function(){return {ok:false,error:'offline'};});
+}
+function rcBackupWhen(){
+  var d=new Date(),p=function(n){return (n<10?'0':'')+n;};
+  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes());
+}
+function rcBackupList(){return rcBackupReq('GET','/api/backup/list');}
+function rcBackupSave(data,auto){
+  return rcBackupReq('POST','/api/backup/save?when='+rcBackupWhen()+(auto?'&auto=1':''),JSON.stringify(data));
+}
+function rcBackupGet(name){
+  return fetch('/api/backup/get?file='+encodeURIComponent(name)).then(function(r){return r.json();})
+    .then(function(d){return d&&d.ok===false?null:d;}).catch(function(){return null;});
+}
+function rcBackupDelete(name){return rcBackupReq('POST','/api/backup/delete?file='+encodeURIComponent(name));}
+// Automatisches Backup vor Import/Firmware-Update. collect liefert die
+// Konfiguration (oder ein Promise darauf); ein Fehler haelt nichts auf.
+function rcBackupSnapshot(collect){
+  return Promise.resolve().then(collect).then(function(d){return d?rcBackupSave(d,true):null;}).catch(function(){return null;});
+}
+// Anzeigename: "21.10.2026 21:05 · Nr. 12 (automatisch) · 3.4 kB"
+function rcBackupLabel(f){
+  var m=/^cfg-(\d{4})-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(f.name)||[];
+  var t=m[2]&&m[2]!=='0000'?m[4]+'.'+m[3]+'.'+m[2]+' '+m[5]+':'+m[6]+' · ':'';
+  return t+'Nr. '+(+m[1]||'?')+(f.auto?' (automatisch)':'')+' · '+(f.size/1024).toFixed(1)+' kB';
+}
+// Backups neuestes zuerst in ein <select> fuellen, liefert die Anzahl
+function rcBackupFill(sel,files){
+  if(!sel)return 0;
+  sel.innerHTML='';
+  (files||[]).slice().sort(function(a,b){return a.name<b.name?1:-1;}).forEach(function(f){
+    var o=document.createElement('option');o.value=f.name;o.textContent=rcBackupLabel(f);sel.appendChild(o);
+  });
+  return sel.options.length;
 }
 )JS";
 

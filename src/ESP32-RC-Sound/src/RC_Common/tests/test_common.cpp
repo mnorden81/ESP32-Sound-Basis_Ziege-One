@@ -3,7 +3,7 @@
  *
  * Unity-Tests fuer die Teile von RC_Common ohne CRSF-Protokoll:
  * UART-Rollen, Lua-Menue (Tabelle), WLAN-Failsafe, Status-LED,
- * Einstellungen. Start mit:  sh RC_Common/tests/run_tests.sh
+ * Einstellungen, Namen der Flash-Backups. Start mit:  sh RC_Common/tests/run_tests.sh
  */
 
 // Nur fuer die Host-Tests: liegt im Sketch-Ordner, die Arduino-IDE und
@@ -18,6 +18,7 @@
 #include "wifi_failsafe.h"
 #include "status_led.h"
 #include "settings_common.h"
+#include "config_backup.h"
 
 class FakeStream : public Stream {
 public:
@@ -272,6 +273,48 @@ void test_settings_sanitize() {
     TEST_ASSERT_EQUAL_UINT32(UART_BAUD_AUTO, s.baud[1]);
 }
 
+
+// ── Einstellungs-Backups im Flash (seit 1.2.0) ──────────────────────────
+
+void test_backup_names() {
+    char n[CFG_BACKUP_NAME_LEN];
+    cfgBackupMakeName(n, sizeof(n), 12, "20261021-2105", false);
+    TEST_ASSERT_EQUAL_STRING("cfg-0012-20261021-2105.json", n);
+    bool a = true;
+    TEST_ASSERT_EQUAL_INT(12, cfgBackupParseName(n, &a));
+    TEST_ASSERT_FALSE(a);
+    cfgBackupMakeName(n, sizeof(n), 7, "kaputt", true);
+    TEST_ASSERT_EQUAL_STRING("cfg-0007-00000000-0000-auto.json", n);
+    TEST_ASSERT_EQUAL_INT(7, cfgBackupParseName(n, &a));
+    TEST_ASSERT_TRUE(a);
+    TEST_ASSERT_TRUE(strlen(n) < CFG_BACKUP_NAME_LEN);
+}
+
+void test_backup_rejects_foreign_names() {
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName(nullptr));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName(""));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("tmp"));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("../cfg-0001-20261021-2105.json"));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("cfg-0001-20261021-2105.json/"));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("cfg-00a1-20261021-2105.json"));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("cfg-0001-2026102x-2105.json"));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("cfg-0001-20261021-2105-otto.json"));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupParseName("cfg-0001-20261021-2105.jsox"));
+    TEST_ASSERT_FALSE(cfgBackupWhenValid("2026102-21055"));
+    TEST_ASSERT_TRUE(cfgBackupWhenValid("20261021-2105"));
+}
+
+void test_backup_prune_per_kind() {
+    const char* names[] = {
+        "cfg-0003-20261021-2105.json", "cfg-0001-20261021-2100.json",
+        "cfg-0002-20261021-2101-auto.json", "fremd.txt",
+        "cfg-0004-20261021-2106.json",
+    };
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupPruneIndex(names, 5, false, 3));
+    TEST_ASSERT_EQUAL_INT(1, cfgBackupPruneIndex(names, 5, false, 2));
+    TEST_ASSERT_EQUAL_INT(-1, cfgBackupPruneIndex(names, 5, true, 1));
+    TEST_ASSERT_EQUAL_INT(2, cfgBackupPruneIndex(names, 5, true, 0));
+}
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_role_names_and_options);
@@ -291,6 +334,9 @@ int main(int, char**) {
     RUN_TEST(test_led_modes_sbus);
     RUN_TEST(test_led_patterns);
     RUN_TEST(test_settings_sanitize);
+    RUN_TEST(test_backup_names);
+    RUN_TEST(test_backup_rejects_foreign_names);
+    RUN_TEST(test_backup_prune_per_kind);
     return UNITY_END();
 }
 
