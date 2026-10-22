@@ -25,7 +25,8 @@ Gemeinsame Basis aller ESP32-Firmwaren (RC-Multiswitch C3/S3, Multiswitch Basis 
 | `settings_common.*` | Gemeinsame NVS-Schlüssel (WLAN, Moduladresse, Failsafe, UART-Rollen) mit einmaliger Übernahme der alten Schlüssel |
 | `wifi_failsafe.h` | WLAN schaltet sich ohne RC-Signal nach Timeout ein (nie automatisch aus) |
 | `status_led.*` | Blinkmuster: aus, langsam (OK), schnell (Failsafe), Doppelblitz (Konfigurationsfehler); WS2812 oder GPIO |
-| `web_common.*` | Gemeinsamer WebUI-Kern: OTA-Upload `/api/otaupdate`, `/rc_common.js` (Rollen, Baudraten, OTA-Upload, Fehlertexte), `/api/uartroles` |
+| `web_common.*` | Gemeinsamer WebUI-Kern: OTA-Upload `/api/otaupdate`, `/rc_common.js` (Rollen, Baudraten, OTA-Upload, Flash-Backups, Fehlertexte), `/api/uartroles` |
+| `config_backup.*` | Einstellungs-Backups im Flash (LittleFS, Partition `spiffs`): `/api/backup/list`, `save`, `get`, `delete`, je 5 von Hand und 3 automatisch (vor Import und Firmware-Update). Inhalt wie beim Export als Datei, das Projekt liefert ihn. Nur aktiv, wenn das Projekt `cfgBackupRegister()` aufruft |
 | `tests/` | Host-Tests mit Unity, laufen ohne ESP32: `sh RC_Common/tests/run_tests.sh` |
 
 ## Gemeinsame NVS-Schlüssel
@@ -38,5 +39,6 @@ Im Namensraum des jeweiligen Projekts: `ssid pass wip dnam madr wfauto wftmo wfa
 |---|---|---|
 | 1.0.0 | 1.1.0 | Erste gemeinsame Basis (Schritte 1–9 des Firmware-Vergleichs vom 21.10.2026) |
 | 1.1.0 | 1.1.0 | GPS-Baudrate „Auto“ (wie Betaflight/INAV): Eintrag 0 der Baudratenliste, Vorgabe für die Rolle GPS. Bei „Auto“ nehmen die anderen Rollen ihre Protokoll-Baudrate. Alte GPS-Einstellungen werden bei der Übernahme auf „Auto“ gesetzt. `rcFillBaud()` in `/rc_common.js` |
+| 1.2.0 | 1.1.0 | Einstellungs-Backups im Flash (`config_backup.*`, `rcBackup*()` in `/rc_common.js`). `rcOtaUpload()` nimmt einen optionalen Schritt vor dem Upload (automatisches Backup) |
 
 Voraussetzung: ESP32 Arduino Core 3.x (Multiswitch: arduino-cli `esp32:esp32@3.0.7`, Soundmodule: PlatformIO pioarduino 51.03.07 = Core 3.0.7).

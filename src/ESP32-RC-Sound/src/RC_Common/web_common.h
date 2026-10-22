@@ -8,6 +8,8 @@
 //   GET  /api/uartroles  Rollen und Baudraten als JSON
 // dazu kleine JSON-Helfer fuer die REST-APIs der Projekte.
 // Die projektspezifischen Seiten und APIs bleiben im Projekt.
+// Die Flash-Backups (/api/backup/*) registriert config_backup.h, ihr
+// JavaScript (rcBackup*) liegt mit in /rc_common.js.
 #ifndef RC_WEB_COMMON_H
 #define RC_WEB_COMMON_H
 
