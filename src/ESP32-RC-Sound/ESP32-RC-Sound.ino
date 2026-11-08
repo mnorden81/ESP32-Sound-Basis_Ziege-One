@@ -187,7 +187,7 @@ uint16_t einkanal_SpeicherWM_Grp[RCSOUND_NUM_GROUPS] = {};
 
 // Je ein 8-Bit-Wert (1 Bit/Schalter) aus den 2 unabhaengig konfigurierbaren
 // Gruppen sowie deren Kombination zu einem 16-Bit-Flachwert - Quelltyp
-// "MKan" 80-95 (siehe Config()). Je nach RC-System wird eine Gruppe entweder
+// "MKan" 80-95 (siehe ConfigQuellen()). Je nach RC-System wird eine Gruppe entweder
 // per CRSF-Gruppenadresse (config.EK_Gruppen_Adresse[], siehe
 // updateGroupFromAddress()) oder per fest zugewiesenem SBUS-Kanal
 // (config.SBUS_Gruppen_Channel[], siehe einkanalFunctionSBUSGroup())
@@ -316,7 +316,7 @@ void attachPWM_ISR(uint8_t pinIdx) {
 }
 
 // ── Vorwärtsdeklarationen ─────────────────────────────────────────────
-void Config(); void SDCardInit(); void LoadFiles();
+void ConfigQuellen(); void SDCardInit(); void LoadFiles();
 void AllocateSoundBuffers(); // reserviert die Sample-Puffer erst in setup() NACH dem WLAN-AP-Start, siehe dort und XT_I2S_Audio.h
 static inline bool pwmValid(uint8_t idx);
 void einkanalFunction(uint16_t ch);
@@ -377,7 +377,7 @@ static inline uint16_t crsfSlotDelayMs() { return (uint16_t)((uint8_t)constrain(
 //      4=Pin(60-65)  5=Einkanal(70-77) 6=Mehrfachkanal/MKan(80-95,
 //      siehe RCSOUND_NUM_GROUPS/EK_Gruppen_Adresse - 2 Gruppen x 8 Kanaele)
 //      7=Dauerbetrieb(200) 8=Deaktiviert(999)
-// V3 ignoriert Typen 2/3/4 in Config()
+// V3 ignoriert Typen 2/3/4 in ConfigQuellen()
 
 static uint8_t einTyp(int c) {
     if(c==999)return 8; if(c==200)return 7;
@@ -426,7 +426,7 @@ static uint8_t einMaxNr(uint8_t t) {
 
 // ── Typ-Mapping Quelle Speed ──────────────────────────────────────────
 // Typ: 0=BUS Kanal(0-15) 1=PWM Pin(20-25) 2=Deaktiviert(999)
-// V3 ignoriert Typ 1 in Config()
+// V3 ignoriert Typ 1 in ConfigQuellen()
 static uint8_t spdTyp(int c) {
     if(c>=0&&c<=15)return 0; if(c>=20&&c<=25)return 1; return 2;
 }
@@ -469,7 +469,7 @@ static uint8_t spdSelVal() {
 
 // ── CRSF Quelle EIN Optionen: V3 zeigt nur L/H/EK/MKan/Dauer/Aus ────────
 // "MKan" (Mehrfachkanal, Typ 6) ist fuer alle Hardware-Varianten waehlbar,
-// auch V3 (kein GPIO) - siehe Config() fuer die Auswertung. Genau die
+// auch V3 (kein GPIO) - siehe ConfigQuellen() fuer die Auswertung. Genau die
 // Hardware, mit der die Multiswitch-Box/das WM-Widget normalerweise
 // betrieben wird.
 static const char* einSelStr() {
@@ -951,7 +951,7 @@ void loop() {
     // Read()).
     wifiFailsafeCheck();
 
-    Config();
+    ConfigQuellen();
     if(currentTime<5000) return;
     for(uint8_t i=1;i<=24;i++) handleSound(i,Sounds[i]);
 
@@ -1008,7 +1008,7 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd) {
 }
 
 // ======== Config: Quellen auswerten ==================================
-void Config() {
+void ConfigQuellen() {
     bool isV3 = (config.Hardware_Config >= 2);  // V3 hat keine GPIO-Eingaenge (einziger Wert >=2)
 
     for (int x=0; x<=24; x++) {
@@ -1168,7 +1168,7 @@ void einkanalFunction(uint16_t ch) {
 //            muss.
 // Das Ergebnis landet wie bei einkanalFunctionCRSF()/updateGroupFromAddress()
 // in einkanal_Gruppe[g] und wird zu einkanal_Flat16 kombiniert - die
-// "MKan"-Einzelkanaele (80-95) in Config() lesen CRSF- wie SBUS-Gruppen ueber
+// "MKan"-Einzelkanaele (80-95) in ConfigQuellen() lesen CRSF- wie SBUS-Gruppen ueber
 // denselben Flat16-Wert.
 void einkanalFunctionSBUSGroup(uint8_t g, uint16_t ch) {
     if(config.SBUS_Gruppen_Mode[g]==0){
@@ -1188,7 +1188,7 @@ void einkanalFunctionSBUSGroup(uint8_t g, uint16_t ch) {
 // (config.EK_Gruppen_Adresse[]) geprueft. Trifft eine davon zu, landet der
 // jeweilige 8-Bit-Wert (1 Bit/
 // Schalter) in einkanal_Gruppe[g] und wird zu einkanal_Flat16 kombiniert -
-// die Grundlage fuer die 16 "MKan"-Einzelkanaele (80-95) in Config().
+// die Grundlage fuer die 16 "MKan"-Einzelkanaele (80-95) in ConfigQuellen().
 static void updateGroupFromAddress(uint8_t addr, uint8_t bits){
     for(uint8_t g=0; g<RCSOUND_NUM_GROUPS; g++){
         if(config.EK_Gruppen_Adresse[g]!=255 && addr==(uint8_t)config.EK_Gruppen_Adresse[g]){
