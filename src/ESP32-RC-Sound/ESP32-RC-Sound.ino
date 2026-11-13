@@ -133,7 +133,9 @@
 #include "src/RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
 #include "src/RC_Common/wifi_failsafe.h"
 
-uint16_t Version = 721;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (721 -> "7.21")
+uint16_t Version = 722;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (722 -> "7.22")
+// v7.22: Lua: Kanal-Felder bleiben bei Aus/Dauer/kein Pin Zahlenfelder (gesperrt)
+//        statt Info "Deaktiviert" - sonst erst nach Menue-Verlassen aenderbar.
 char versionString[6];
 bool gpsPinConflict = false; // true, wenn Port C (GPS) UND SBUS gleichzeitig gewaehlt sind (GPIO27-Konflikt, siehe setup())
 // Ob der AP gerade aktiv ist, wird NICHT hier gespiegelt: loop() fragt dafuer
@@ -556,10 +558,18 @@ static void    luaSetSpdSrc(uint8_t, uint8_t v) {
     uint8_t realTyp = (config.Hardware_Config >= 2 && v == 1) ? 2 : v;
     config.Source_Speed_Sound_0 = setSpd(realTyp, nr); markDirty();
 }
+// Gesperrtes Kanal-Feld: bleibt ein Zahlenfeld mit festem Wert (min = max).
+// Wuerde es zum Info-Feld ("Deaktiviert"), laedt das ELRS-Lua-Skript es nach
+// einer Aenderung der Quelle nicht neu (es laedt nur Zahlen-/Auswahlfelder
+// nach) - der Kanal liess sich dann erst nach Verlassen des Menues aendern.
+static void luaLockChannel(LuaView& v) {
+    if (v.value < 1 || v.value > 16) v.value = 1;
+    v.min = v.max = v.value;
+}
 static void luaShowSpdChannel(uint8_t, LuaView& v, char*) {
     uint8_t t = spdTyp(config.Source_Speed_Sound_0);
     if (t == 2 || (config.Hardware_Config >= 2 && t == 1)) {
-        v.type = LUA_INFO; v.name = "Kanal Speed"; v.text = "Deaktiviert";
+        luaLockChannel(v);
     } else {
         v.max = (t == 1) ? 6 : 16;
     }
@@ -575,9 +585,7 @@ static void luaShowChannel(uint8_t s, LuaView& v, char*) {
     uint8_t t = einTyp(config.Source_Start_Sound[s]);
     bool noPin = (config.Hardware_Config >= 2 && (t == 2 || t == 3 || t == 4));
     if (t == 7 || t == 8 || noPin) {
-        v.type = LUA_INFO;
-        if (s == 0) { v.name = "Kanal EIN"; v.text = (t == 7 || noPin) ? "Dauerbetrieb/Deakt." : "Deaktiviert"; }
-        else        { v.text = (t == 7) ? "Dauerbetrieb" : "Deaktiviert"; }
+        luaLockChannel(v);   // Dauerbetrieb/Aus/kein Pin: Kanal gesperrt
     } else {
         v.max = einMaxNr(t);
     }
