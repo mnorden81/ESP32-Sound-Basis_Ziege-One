@@ -73,9 +73,54 @@ Dateien lassen sich per Kartenleser kopieren oder direkt über die Weboberfläch
 
 ---
 
-## Bauen und Flashen
+## Firmware flashen
 
-### PlatformIO (empfohlen)
+Ein neues Modul wird einmal per USB mit der Arduino IDE geflasht (Weg 1). Danach geht jedes Update bequem per WLAN (Weg 2). Die Einstellungen bleiben bei beiden Wegen erhalten, die Sounds liegen ohnehin auf der SD-Karte.
+
+### Weg 1: Arduino IDE (USB)
+
+**Einmalig einrichten**
+
+1. Arduino IDE 2.x installieren (https://www.arduino.cc/en/software).
+2. **Datei → Einstellungen → Zusätzliche Boardverwalter-URLs**: `https://espressif.github.io/arduino-esp32/package_esp32_index.json` eintragen.
+3. **Werkzeuge → Board → Boardverwalter**: „esp32“ suchen, **esp32 von Espressif Systems** in Version **3.0.7** installieren (neuere 3.x gehen auch).
+4. **Werkzeuge → Bibliotheken verwalten**: **Bolder Flight Systems SBUS 8.1.4**, **EspSoftwareSerial 8.2.0** und **TinyGPSPlus 1.0.3** suchen und installieren.
+   Alles andere (z. B. `src/RC_Common/`) liegt schon im Sketch-Ordner.
+
+**Flashen**
+
+1. Repo herunterladen: oben auf GitHub **Code → Download ZIP**, entpacken (oder den vorhandenen Ordner nehmen).
+2. In der Arduino IDE **Datei → Öffnen** und `src/ESP32-RC-Sound/ESP32-RC-Sound.ino` wählen. Die Ordner `lib/` und `test/` **nicht** in den Sketch-Ordner kopieren (sonst „multiple definition of …“).
+3. Unter **Werkzeuge** einstellen:
+
+   | Einstellung | Wert |
+   |---|---|
+   | Board | **ESP32 Dev Module** |
+   | Flash Size | 4MB (32Mb) |
+   | Partition Scheme | **Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)** (OTA-fähig, wie GitHub) |
+   | Erase All Flash Before Sketch Upload | **Disabled** (sonst sind die Einstellungen weg) |
+
+4. ESP32-Board mit einem USB-**Datenkabel** an den PC stecken. Windows braucht evtl. einen Treiber für den USB-Seriell-Chip auf dem Board (CP210x von Silicon Labs oder CH340). Dann unter **Werkzeuge → Port** den neuen COM-Port wählen.
+5. Auf den Pfeil **Hochladen** klicken. Am Ende steht „Hard resetting via RTS pin…“, das Modul startet neu.
+
+**Wenn das Hochladen nicht klappt** („Failed to connect“): Sobald unten „Connecting…“ erscheint, die Taste **BOOT** (manchmal „IO0“) auf dem ESP32-Board gedrückt halten, bis die Prozentzahlen laufen. Dann noch einmal **Hochladen**.
+
+### Weg 2: Update per WLAN (OTA)
+
+1. Die Datei `.bin` besorgen:
+   - aus GitHub: angemeldet oben auf **Actions** klicken, links den Workflow **CI** wählen, den obersten Lauf mit grünem Haken öffnen, unten unter **Artifacts** **ESP32-RC-Sound-firmware** herunterladen und entpacken. Darin liegt `firmware.bin`. Fehlt der Download (Artefakte werden nach 90 Tagen gelöscht): rechts oben **Run workflow** → **Run workflow**, nach ca. 3 Minuten ist ein neuer Lauf fertig.
+   - oder in der Arduino IDE mit **Sketch → Kompilierte Binärdatei exportieren** (liegt dann im Sketch-Ordner unter `build/`, Datei `ESP32-RC-Sound.ino.bin`; die Dateien `…bootloader.bin` und `…partitions.bin` werden nicht gebraucht).
+2. WLAN des Moduls einschalten (ab Werk „WLAN dauerhaft an“, sonst siehe [WLAN aktivieren](#wlan-aktivieren)). Name **ESP32-RC-Sound**, Passwort `123456789` (falls nicht geändert).
+3. Mit Handy oder PC in dieses WLAN gehen und im Browser http://192.168.1.1 öffnen.
+4. Tab **Einstellungen**, Karte **Firmware-Update (OTA)**: die `.bin`-Datei auswählen und hochladen. Das Modul startet danach neu.
+
+Schlägt das Update fehl oder wird es abgebrochen, bleibt die bisherige Firmware aktiv und startfähig.
+
+> **Praxistipp:** OTA möglichst mit über ESC/Akku bestromtem Modul durchführen. Manche USB-Anschlüsse liefern beim Flash-Schreiben nicht genug Strom; ein Brownout-Reset bricht den Upload ab.
+
+GitHub baut für dieses Modul nur die Update-Datei, kein Komplett-Image. Ein ganz neues Modul geht deshalb nur über Weg 1.
+
+### PlatformIO (für Entwickler)
 
 ```bash
 pio run -e esp32dev              # Firmware bauen
@@ -84,23 +129,6 @@ pio test -e native               # Host-Tests, ohne ESP32-Hardware
 ```
 
 Bibliotheksversionen sind in `platformio.ini` fest gepinnt. Die Partitionstabelle steht auf `default.csv` (Standard des Arduino-ESP32-Cores) — zwei App-Partitionen à 1,25 MB, damit OTA funktioniert.
-
-### Arduino IDE
-
-Benötigte Bibliotheken:
-
-- Bolder Flight Systems SBUS 8.1.4
-- EspSoftwareSerial 8.2.0 und TinyGPSPlus 1.1.0 (für GPS, werden immer mitkompiliert)
-
-Seit v7.21 braucht die Firmware den **Arduino-ESP32-Core 3.0.7** (wie die Multiswitch-Firmwaren). Gemeinsamer Code aller ESP32-Module liegt im Sketch unter `src/RC_Common/` (CRSF-Bibliothek, ursprünglich [CRSF_ESP32](https://github.com/Ziege-One/CRSF_ESP32), dazu UART-Rollen, S.Port, GPS, Lua-Menü-Tabelle, gemeinsame Einstellungen, WLAN-Failsafe, OTA). Die Arduino-IDE kompiliert diesen Unterordner automatisch mit. Derselbe Ordner liegt als identische Kopie in Multiswitch und Soundmodul Mini; Änderungen dort mit nachziehen (siehe `src/RC_Common/README.md`).
-
-Im Menü **Werkzeuge → Partition Scheme** ein OTA-fähiges Schema wählen, sonst funktioniert das Firmware-Update per WLAN nicht. Der Ordner `lib/` und `test/` gehören **nicht** in den Sketch-Ordner — nur der Inhalt von `src/`, sonst meldet der Compiler „multiple definition of …".
-
-### OTA-Update
-
-Über die Karte „Firmware-Update (OTA)" im Tab *Einstellungen* wird eine kompilierte `.bin` per WLAN in das inaktive OTA-Segment geschrieben. Schlägt das Update fehl oder wird es abgebrochen, bleibt die bisherige Firmware aktiv und startfähig.
-
-> **Praxistipp:** OTA möglichst mit über ESC/Akku bestromtem Modul durchführen. Manche USB-Anschlüsse liefern beim Flash-Schreiben nicht genug Strom; ein Brownout-Reset bricht den Upload ab.
 
 ---
 
