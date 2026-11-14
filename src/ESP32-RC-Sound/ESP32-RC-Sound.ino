@@ -133,7 +133,11 @@
 #include "src/RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
 #include "src/RC_Common/wifi_failsafe.h"
 
-uint16_t Version = 722;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (722 -> "7.22")
+uint16_t Version = 723;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (723 -> "7.23")
+// v7.23: Lua uebersichtlicher (RC_Common 1.3.0): Chunk-Fix fuer lange Auswahlfelder
+//        (Port B Baudrate), Quelle/RC-System in Ordnernamen, Felder ohne Wirkung
+//        ausgeblendet (SBUS-Einkanal/-Gruppen, PWM min/max bei V3, Kanal bei
+//        Aus/Dauer, Baudrate bei Port B Aus), RC-System im Lua nur Anzeige.
 // v7.22: Lua: Kanal-Felder bleiben bei Aus/Dauer/kein Pin Zahlenfelder (gesperrt)
 //        statt Info "Deaktiviert" - sonst erst nach Menue-Verlassen aenderbar.
 char versionString[6];
@@ -529,9 +533,51 @@ static void luaShowDeviceName(uint8_t, LuaView& v, char* buf) {
     snprintf(buf, LUA_VIEW_BUF, "%s (Web aendern)", config.Device_Name);
     v.text = buf;
 }
+// v7.23: Quelle im Ordnernamen, z. B. "Sound 3 (L 5)", "Motor (Aus)" (wie ELRS
+// selbst, z. B. "TX Power (100mW)"). Das ELRS-Lua laedt den Ordner nach einer
+// Aenderung darin neu.
+static void luaSourceText(int cfg, char* out, size_t len) {
+    static const char* const N[] = {"L", "H", "PWM-L", "PWM-H", "Pin", "EK", "MKan", "Dauer", "Aus"};
+    uint8_t t = einTyp(cfg);
+    if (t > 8 || (config.Hardware_Config >= 2 && t >= 2 && t <= 4)) t = 8;   // V3: kein Pin
+    if (t <= 6) snprintf(out, len, "%s %d", N[t], einNr(cfg));
+    else        snprintf(out, len, "%s", N[t]);
+}
 static void luaShowSoundFolder(uint8_t s, LuaView& v, char* buf) {
-    snprintf(buf, LUA_VIEW_BUF, "Sound %d", s);
+    char src[12];
+    luaSourceText(config.Source_Start_Sound[s], src, sizeof(src));
+    snprintf(buf, LUA_VIEW_BUF, "Sound %d (%s)", s, src);
     v.name = buf;
+}
+static void luaShowMotorFolder(uint8_t, LuaView& v, char* buf) {
+    char src[12];
+    luaSourceText(config.Source_Start_Sound[0], src, sizeof(src));
+    snprintf(buf, LUA_VIEW_BUF, "Motor (%s)", src);
+    v.name = buf;
+}
+static const char* const RC_SYS_NAMES[] = {"FrSky", "FlySky", "ELRS SBUS", "Hott", "ELRS CRSF"};
+static void luaShowSettingsFolder(uint8_t, LuaView& v, char* buf) {
+    snprintf(buf, LUA_VIEW_BUF, "Einstellungen (%s)", RC_SYS_NAMES[constrain(config.Einkanal_RC_System, 0, 4)]);
+    v.name = buf;
+}
+// v7.23: RC-System im Lua nur Anzeige. Umstellen auf SBUS per Lua haette das
+// Lua selbst abgeschaltet (Lua gibt es nur bei CRSF), jetzt nur in der Web-UI.
+static void luaShowRcSystem(uint8_t, LuaView& v, char* buf) {
+    snprintf(buf, LUA_VIEW_BUF, "%s (Web aendern)", RC_SYS_NAMES[constrain(config.Einkanal_RC_System, 0, 4)]);
+    v.text = buf;
+}
+// v7.23: Felder ohne Wirkung ausblenden (CRSF hidden, Feld-IDs bleiben).
+// Einkanal-Kanal/-Mode und SBUS-Gruppen wirken nur bei SBUS, das Lua gibt
+// es nur bei CRSF.
+static void luaHideSbusOnly(uint8_t, LuaView& v, char*) {
+    if (Einkanal_RC_System_boot == 4) v.hidden = true;
+}
+// PWM min/max gelten nur fuer den PWM-Eingang (Hardware V1/V2)
+static void luaViewPwmScale(uint8_t, LuaView& v, char*) {
+    if (config.Hardware_Config >= 2) v.hidden = true;
+}
+static void luaViewPortBBaud(uint8_t, LuaView& v, char*) {
+    if (uartRoleClamp(config.PortB_Role) == 0) v.hidden = true;
 }
 
 // ── Motor ────────────────────────────────────────────────────────────────
@@ -562,9 +608,12 @@ static void    luaSetSpdSrc(uint8_t, uint8_t v) {
 // Wuerde es zum Info-Feld ("Deaktiviert"), laedt das ELRS-Lua-Skript es nach
 // einer Aenderung der Quelle nicht neu (es laedt nur Zahlen-/Auswahlfelder
 // nach) - der Kanal liess sich dann erst nach Verlassen des Menues aendern.
+// v7.23: zusaetzlich ausgeblendet (CRSF hidden, Typ bleibt Zahl). Ein Lua
+// ohne hidden-Unterstuetzung zeigt das gesperrte Feld wie bisher.
 static void luaLockChannel(LuaView& v) {
     if (v.value < 1 || v.value > 16) v.value = 1;
     v.min = v.max = v.value;
+    v.hidden = true;
 }
 static void luaShowSpdChannel(uint8_t, LuaView& v, char*) {
     uint8_t t = spdTyp(config.Source_Speed_Sound_0);
@@ -601,8 +650,6 @@ static uint8_t luaGetTest(uint8_t s)                { return testSoundActive[s] 
 static void    luaSetTest(uint8_t s, uint8_t v)     { if (v == 1) Sound_on_web[s] = true; testSoundActive[s] = (v == 1); }
 
 // ── Einstellungen ────────────────────────────────────────────────────────
-static uint8_t luaGetRcSystem(uint8_t)              { return (uint8_t)constrain(config.Einkanal_RC_System, 0, 4); }
-static void    luaSetRcSystem(uint8_t, uint8_t v)   { config.Einkanal_RC_System = v; markDirty(); }
 static uint8_t luaGetModAdr(uint8_t)                { return (uint8_t)constrain(config.modul_adress, 0, 20); }
 static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; crsf.setDeviceAddress(crsfAddrFromWM()); markDirty(); }
 // Kanal mit 999 = aus: arg 0 Einkanal, 1/2 SBUS-Gruppe 1/2
@@ -665,7 +712,7 @@ static void buildLuaMenu() {
     m.folder(0, 0, "");
     m.info(1, 0, "Version", "")->view = luaShowVersion;
 
-    m.folder(2, 0, "Motor");
+    m.folder(2, 0, "Motor")->view = luaShowMotorFolder;
     m.select(3, 2, "Motor Mode", "Eine Richtung;Zwei Richtungen", luaGetThrottleMode, luaSetThrottleMode);
     m.select(4, 2, "Motor EIN Modus", "Normal;Toggle", luaGetToggle, luaSetToggle);
     m.select(5, 2, "Quelle Motor", einSelStr(), luaGetSource, luaSetSource, 0)->view = luaShowSource;
@@ -692,27 +739,27 @@ static void buildLuaMenu() {
         m.select(fi + 5, fi, "Test Sound", AUS_EIN, luaGetTest, luaSetTest, s);
     }
 
-    m.folder(160, 0, "Einstellungen");
-    m.select(161, 160, "RC-System", "FrSky;FlySky;ELRS SBUS;Hott;ELRS CRSF", luaGetRcSystem, luaSetRcSystem);
+    m.folder(160, 0, "Einstellungen")->view = luaShowSettingsFolder;
+    m.info(161, 160, "RC-System", "")->view = luaShowRcSystem;   // v7.23: nur Anzeige
     m.u8(162, 160, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
-    m.u8(163, 160, "Einkanal Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 0);
-    m.select(164, 160, "Einkanal Mode", WM_MODES, luaGetWmMode, luaSetWmMode, 0);
+    m.u8(163, 160, "Einkanal Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 0)->view = luaHideSbusOnly;
+    m.select(164, 160, "Einkanal Mode", WM_MODES, luaGetWmMode, luaSetWmMode, 0)->view = luaHideSbusOnly;
     m.select(165, 160, "Hardware Config", "V1;V2;V3", luaGetHwConfig, luaSetHwConfig);
-    m.u8(166, 160, "PWM min (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 0);
-    m.u8(167, 160, "PWM max (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 1);
+    m.u8(166, 160, "PWM min (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 0)->view = luaViewPwmScale;
+    m.u8(167, 160, "PWM max (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 1)->view = luaViewPwmScale;
     m.u8(168, 160, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
     m.u8(169, 160, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
     m.info(170, 0, "Geraetename", "")->view = luaShowDeviceName;
     m.select(171, 160, "Port B Rolle", uartRoleOptions(), luaGetPortBRole, luaSetPortBRole);
-    m.select(172, 160, "Port B Baudrate", uartBaudOptions(), luaGetPortBBaud, luaSetPortBBaud);
+    m.select(172, 160, "Port B Baudrate", uartBaudOptions(), luaGetPortBBaud, luaSetPortBBaud)->view = luaViewPortBBaud;
     m.select(173, 160, "Port C (GPS)", "Aus;An", luaGetPortCGps, luaSetPortCGps);
     m.select(174, 160, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
     m.select(175, 160, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
     m.u8(176, 160, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
-    m.u8(177, 160, "SBUS Gruppe1 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 1);
-    m.select(178, 160, "SBUS Gruppe1 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 1);
-    m.u8(179, 160, "SBUS Gruppe2 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 2);
-    m.select(180, 160, "SBUS Gruppe2 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 2);
+    m.u8(177, 160, "SBUS Gruppe1 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 1)->view = luaHideSbusOnly;
+    m.select(178, 160, "SBUS Gruppe1 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 1)->view = luaHideSbusOnly;
+    m.u8(179, 160, "SBUS Gruppe2 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 2)->view = luaHideSbusOnly;
+    m.select(180, 160, "SBUS Gruppe2 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 2)->view = luaHideSbusOnly;
     m.select(181, 160, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
 }
 
