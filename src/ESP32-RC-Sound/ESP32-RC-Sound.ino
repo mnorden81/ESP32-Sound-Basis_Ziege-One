@@ -850,8 +850,6 @@ static void buildLuaMenu() {
     m.select(SOUNDMAP_FI + 2, SOUNDMAP_FI, "Datei", "(leer)", luaGetMapFile, luaSetMapFile)->view = luaViewMapFile;
     // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
     // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
-    // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
-    // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
     m.select(SOUNDMAP_FI + 3, SOUNDMAP_FI, "Groesse", "-", luaGetZero, nullptr)->view = luaShowMapSize;
 }
 
