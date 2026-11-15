@@ -2109,7 +2109,6 @@ void WebServerManager::handleApiSdList() {
   }
 
   j += "]}";
-  delete[] files;
   sendJson(server, j);
 }
 
@@ -2502,6 +2501,7 @@ void WebServerManager::handleApiSoundLib() {
          "\",\"file\":\"" + jsonEscape(config.Sound_File[i]) + "\"}";
   }
   j += "]}";
+  delete[] files;
   sendJson(server, j);
 }
 
