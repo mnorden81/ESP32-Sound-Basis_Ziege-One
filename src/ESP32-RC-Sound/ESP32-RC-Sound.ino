@@ -96,7 +96,7 @@
    ── CRSF-/Lua-Parametermenue ───────────────────────────────────────────
    Bei RC-System ELRS (CRSF) ist das Modul zusaetzlich vollstaendig ueber
    das native CRSF-Parametermenue des Senders konfigurierbar (z.B. als
-   Lua-Script in EdgeTX). 181 Feld-IDs, lueckenlos 1..181 (Tabelle in buildLuaMenu()) -
+   Lua-Script in EdgeTX). 185 Feld-IDs, lueckenlos 1..185 (Tabelle in buildLuaMenu()) -
    die vollstaendige Feldliste steht direkt beim Parameter-System weiter
    unten. Jedes Modul erhaelt seine CRSF-Busadresse (0xC0+WM-Adresse) und
    seinen Telemetrie-Zeitslot aus der WM-Adresse (Wilhelm-Meier-Schema),
@@ -132,8 +132,14 @@
 #include "src/RC_Common/gps_speed.h"
 #include "src/RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
 #include "src/RC_Common/wifi_failsafe.h"
+#include "sound_map.h"
+#include <new>
 
-uint16_t Version = 723;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (723 -> "7.23")
+uint16_t Version = 724;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (724 -> "7.24")
+// v7.24: Sound-Zuordnung: Dateien behalten ihren Namen (sound_map.h). Neuer
+//        Web-Tab "Speicher" (alle Sounds der SD-Karte, Auswahlliste je Platz,
+//        Hochladen, Loeschen) und Lua-Ordner "Sound-Zuordnung" (Felder
+//        182-185). Vorhandene loop.wav ... sound24.wav bleiben auf ihrem Platz.
 // v7.23: Lua uebersichtlicher (RC_Common 1.3.0): Chunk-Fix fuer lange Auswahlfelder
 //        (Port B Baudrate), Quelle/RC-System in Ordnernamen, Felder ohne Wirkung
 //        ausgeblendet (SBUS-Einkanal/-Gruppen, PWM min/max bei V3, Kanal bei
@@ -332,7 +338,7 @@ static void updateGroupFromAddress(uint8_t addr, uint8_t bits); // Gruppenadress
 float ramp_throttle(float t); float floatMap(float x,float a,float b,float c,float d);
 void handleSound(uint8_t idx, XT_Wav_Class* snd);
 
-// ======== CRSF-Parametersystem (181 Parameter) ==========================
+// ======== CRSF-Parametersystem (185 Parameter) ==========================
 // lib/sound_slots/sound_slots.h und test/test_sound_slots/ sind nicht Teil
 // des esp32dev-Builds (nichts in src/ bindet sie ein) und bleiben ungenutzt
 // liegen.
@@ -366,6 +372,9 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //   SBUS_Gruppen_Channel in config.h)
 //   181:Sel WLAN dauerhaft an  Aus;Ein  (persistiert, siehe config.WifiAlwaysOn;
 //   Default AN - ueberstimmt 174/175/176 komplett, siehe wifiFailsafeCheck())
+//  182: Folder Sound-Zuordnung {183..185} (v7.24)
+//   183:Sel Platz (nur Auswahl, nicht gespeichert)  184:Sel Datei  185:Sel Groesse (nur Anzeige)
+static constexpr uint8_t SOUNDMAP_FI = 182;
 
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -513,7 +522,7 @@ static int einSelWrite(uint8_t val, int oldCfg) {
 // unveraendert (Liste oben), gespeicherte Sender-Profile laufen weiter.
 // Felder, die je nach Zustand anders aussehen (z. B. "Kanal Nr" wird bei
 // "Dauer"/"Aus" zur Info), regeln das ueber eine view-Funktion.
-static LuaItem luaItems[182];
+static LuaItem luaItems[186];
 static LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
 
 static void luaShowVersion(uint8_t, LuaView& v, char* buf) {
@@ -704,6 +713,72 @@ static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec 
 static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
 static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
 
+// ── Sound-Zuordnung (v7.24, Felder 182-185) ───────────────────────────────
+// "Platz" waehlt nur aus, welcher Platz gerade bearbeitet wird (nicht
+// gespeichert). "Datei" zeigt die Dateien im Sound-Speicher als
+// Auswahlliste: "(leer)", dann die aktuelle Datei des Platzes, dann die
+// uebrigen alphabetisch. Namen auf 12 Zeichen gekuerzt. Die Liste wird bei
+// jedem Abruf neu gelesen; get/set rechnen mit derselben Liste, solange sich
+// zwischen Anzeige und Schreiben nichts an den Dateien aendert. Neue
+// Dateien erscheinen am Sender nach erneutem Oeffnen des Menues. Das ELRS-
+// Lua laedt "Datei" und "Groesse" neu, wenn "Platz" geaendert wird.
+static uint8_t luaMapSlot = 3;   // Sound 1
+static char    luaSlotOpts[240];   // 27 Plaetze, ca. 227 Zeichen
+static constexpr size_t LUA_FILE_OPTS_MAX = 200;   // RC_Common sendet hoechstens 256 Byte je Feld
+static constexpr int    LUA_FILE_MAX      = 20;
+static char    luaFileOpts[LUA_FILE_OPTS_MAX + 16];
+static char    luaFileNames[LUA_FILE_MAX][SND_FILE_LEN];
+static uint8_t luaFileCount = 0;   // ohne "(leer)"
+
+static void luaBuildFileList() {
+    // Liste nur kurz auf dem Heap (statisch waeren es 2,5 KB dauerhaft weniger
+    // Heap fuer den WLAN-Start)
+    SoundFileInfo* files = new (std::nothrow) SoundFileInfo[SND_LIST_MAX];
+    int n = files ? soundListFiles(files, SND_LIST_MAX) : 0;
+    const char* cur = config.Sound_File[luaMapSlot];
+    luaFileCount = 0;
+    size_t len = snprintf(luaFileOpts, sizeof(luaFileOpts), "(leer)");
+    auto add = [&](const char* name) {
+        if (luaFileCount >= LUA_FILE_MAX) return;
+        char shortName[16];
+        size_t nl = strlen(name);
+        if (nl > 4 && strcasecmp(name + nl - 4, ".wav") == 0) nl -= 4;
+        if (nl > 12) snprintf(shortName, sizeof(shortName), "%.11s~", name);
+        else         snprintf(shortName, sizeof(shortName), "%.*s", (int)nl, name);
+        if (len + 1 + strlen(shortName) > LUA_FILE_OPTS_MAX) return;
+        len += snprintf(luaFileOpts + len, sizeof(luaFileOpts) - len, ";%s", shortName);
+        snprintf(luaFileNames[luaFileCount++], SND_FILE_LEN, "%s", name);
+    };
+    if (cur[0]) add(cur);   // aktuelle Datei immer sichtbar, auch wenn sie fehlt
+    for (int i = 0; i < n; i++)
+        if (strcasecmp(files[i].name, cur) != 0) add(files[i].name);
+    delete[] files;
+}
+static uint8_t luaGetMapSlot(uint8_t)               { return luaMapSlot; }
+static void    luaSetMapSlot(uint8_t, uint8_t v)    { if (v < SND_FILE_SLOTS) luaMapSlot = v; }
+static void luaViewMapFile(uint8_t, LuaView& v, char*) {
+    luaBuildFileList();
+    v.text = luaFileOpts;
+    v.max  = luaFileCount;
+    v.value = config.Sound_File[luaMapSlot][0] ? 1 : 0;
+}
+static uint8_t luaGetMapFile(uint8_t)               { return config.Sound_File[luaMapSlot][0] ? 1 : 0; }
+static void    luaSetMapFile(uint8_t, uint8_t v) {
+    luaBuildFileList();
+    if (v == 0) soundMapSet(luaMapSlot, "");
+    else if (v <= luaFileCount) soundMapSet(luaMapSlot, luaFileNames[v - 1]);
+}
+static uint8_t luaGetZero(uint8_t)                  { return 0; }
+static void luaShowMapSize(uint8_t, LuaView& v, char* buf) {
+    const char* cur = config.Sound_File[luaMapSlot];
+    uint32_t size = 0;
+    if (!cur[0])                       snprintf(buf, LUA_VIEW_BUF, "-");
+    else if (!soundFileSize(cur, size)) snprintf(buf, LUA_VIEW_BUF, "Datei fehlt");
+    else                               snprintf(buf, LUA_VIEW_BUF, "%u KB", (unsigned)((size + 1023) / 1024));
+    v.text = buf;
+    v.max  = 0;
+}
+
 static void buildLuaMenu() {
     static const char* AUS_EIN  = "Aus;Ein";
     static const char* WM_MODES = "Normal;WM0;WM1;WM2;WM3";
@@ -761,6 +836,21 @@ static void buildLuaMenu() {
     m.u8(179, 160, "SBUS Gruppe2 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 2)->view = luaHideSbusOnly;
     m.select(180, 160, "SBUS Gruppe2 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 2)->view = luaHideSbusOnly;
     m.select(181, 160, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
+
+    // v7.24: Sound-Zuordnung
+    {
+        size_t len = 0;
+        luaSlotOpts[0] = '\0';
+        for (int i = 0; i < SND_FILE_SLOTS; i++)
+            len += snprintf(luaSlotOpts + len, sizeof(luaSlotOpts) - len, "%s%s",
+                            i ? ";" : "", soundMapSlotLabel(i).c_str());
+    }
+    m.folder(SOUNDMAP_FI, 0, "Sound-Zuordnung");
+    m.select(SOUNDMAP_FI + 1, SOUNDMAP_FI, "Platz", luaSlotOpts, luaGetMapSlot, luaSetMapSlot);
+    m.select(SOUNDMAP_FI + 2, SOUNDMAP_FI, "Datei", "(leer)", luaGetMapFile, luaSetMapFile)->view = luaViewMapFile;
+    // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
+    // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
+    m.select(SOUNDMAP_FI + 3, SOUNDMAP_FI, "Groesse", "-", luaGetZero, nullptr)->view = luaShowMapSize;
 }
 
 void setup() {
@@ -802,6 +892,7 @@ void setup() {
     // GPIO16/17 werden durch crsf.init_crsf() / sbus_rx.Begin() konfiguriert
 
     SDCardInit();
+    soundMapApplyAll();   // v7.24: Dateinamen je Platz aus der Konfiguration
     LoadFiles();
 
     // begin() registriert nur die HTTP-Routen und merkt sich SSID/Passwort -

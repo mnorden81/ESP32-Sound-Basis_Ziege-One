@@ -60,7 +60,13 @@ S.Port-Verdrahtung an Port B: `GPIO33 →|1N4148|→ S.Port-Signal ← GPIO32`
 
 ## Sounds auf der SD-Karte
 
-Dateien liegen im Wurzelverzeichnis der Karte, die Namen sind fest vorgegeben:
+Dateien liegen im Wurzelverzeichnis der Karte. **Seit v7.24 behalten Sounds ihren Namen**, und du legst fest, welcher Sound auf welchem Platz spielt (Loop, Standgas, Start, Sound 1–24):
+
+- **Web-UI, Tab „Speicher“:** alle WAV-Dateien der Karte mit Größe und Platz, pro Platz eine Auswahlliste. Ein Sound darf auf mehreren Plätzen liegen. Dort auch Hochladen (mehrere auf einmal) und Löschen.
+- **Web-UI, Tabs „Motor“ und „Sounds“:** „Hochladen“ speichert die Datei mit ihrem Namen und legt sie gleich auf diesen Platz.
+- **Lua-Menü, Ordner „Sound-Zuordnung“** (Felder 182–185): erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien.
+
+Beim Hochladen werden Umlaute ersetzt (ä → ae), Leerzeichen werden zu `_`, Namen bis 40 Zeichen plus `.wav`. Per Kartenleser kopierte Dateien erscheinen im Tab „Speicher“ und müssen dort einem Platz zugeordnet werden. Ausnahme: Ohne eigene Zuordnung gelten wie bisher die festen Namen:
 
 ```
 loop.wav  shut.wav  start.wav          Motorsound
@@ -196,7 +202,7 @@ docs/                    Projektbeschreibung (Word)
 
 ## Versionsstand
 
-Aktuell: **v7.23**
+Aktuell: **v7.24**
 
 Wichtige Schritte der V7-Linie:
 
@@ -213,6 +219,7 @@ Wichtige Schritte der V7-Linie:
 | 7.17 | Fix: Lautstärkeänderung während einer laufenden Web-Testwiedergabe (Sound-Slots 1–24) wirkte bisher erst beim nächsten Trigger, nicht auf die bereits laufende Wiedergabe (`handleSound()`) |
 | 7.19 | CRSF-Code als gemeinsame Bibliothek `src/CRSF_ESP32/` (v1.0.0, auch im Multiswitch). Fixes laut CRSF-Spezifikation: Empfangs-Parser verliert keine Frames mehr, die über zwei Aufrufe verteilt ankommen (vorher verloren und als CRC-Fehler gezählt); Link-Statistik-Felder korrekt zugeordnet; Command-CRC (0xBA) korrigiert; FOLDER-Eintrag ohne überzähliges Byte. Host-Tests in `test/test_crsf`. |
 | 7.20 | Port B kann zusätzlich die Rolle **GPS** übernehmen (Hardware-UART GPIO32/33, Baudrate wählbar, Web-UI und Lua-Menü). Damit lassen sich CRSF, S.Port und GPS auf Port B wählen. Port C bleibt GPS an/aus: es gibt keinen dritten freien Hardware-UART (UART0 = USB/Debug), mit SoftwareSerial sind CRSF (420000 Baud) und S.Port nicht zuverlässig. Steht Port B auf GPS, bleibt Port C aus. GPS-Telemetrie kommt von dem Port, auf dem GPS läuft. |
+| 7.24 | **Sound-Zuordnung:** Sounds behalten beim Hochladen ihren Namen. Neuer Web-Tab „Speicher“ mit allen Sounds der SD-Karte, Auswahlliste je Platz, Hochladen und Löschen. Neuer Lua-Ordner „Sound-Zuordnung“ (Felder 182–185: Platz, Datei, Größe). Vorhandene `loop.wav` … `sound24.wav` bleiben auf ihren Plätzen, die Zuordnung steht im Export/Backup. Noch nicht auf Hardware getestet. |
 | 7.23 | **Lua übersichtlicher (RC_Common 1.3.0, wie RC-Multiswitch-Sound v1.05):** lange Auswahlfelder (Port B Baudrate) kommen vollständig an (Chunk-Fix). Ordner zeigen ihren Wert, z. B. „Motor (L 3)“, „Sound 1 (EK 2)“, „Einstellungen (ELRS CRSF)“. Felder ohne Wirkung werden ausgeblendet: Einkanal Kanal/Mode und SBUS-Gruppen (wirken nur bei SBUS, Lua gibt es nur bei CRSF), PWM min/max bei Hardware V3, Kanal Nr bei Aus/Dauer, Kanal Speed bei Deaktiviert, Baudrate bei Port B „Aus“. RC-System im Lua nur noch Anzeige (Umstellen in der Web-UI), sonst schaltete man sich per Lua das Lua selbst ab. Feldnummern unverändert. |
 | 7.22 | Lua: Kanal-Felder (Motor, Sounds, Speed) bleiben bei Quelle „Aus“, „Dauer“ oder ohne Pin Zahlenfelder (gesperrt) statt Info-Feld „Deaktiviert“. Sonst ließ sich der Kanal nach dem Umstellen der Quelle erst nach Verlassen des Menüs ändern (das ELRS-Lua-Skript lädt nur Zahlen- und Auswahlfelder neu). |
 | 7.21 | **Gemeinsame Basis RC_Common 1.1.0** (gleich in Multiswitch und Soundmodul Mini). Arduino-ESP32-Core 3.0.7 (PlatformIO über pioarduino) statt 2.0.17. CRSF-Bibliothek 1.1.0 mit Router: Port B mit Rolle CRSF reicht jetzt Frames zwischen Port A und Port B weiter (Modulkette), statt nur mitzulesen. Port-B-Rollen mit gemeinsamen Nummern: Aus, CRSF, S.Port, GPS, Raw (Hott entfällt, war nie umgesetzt); der alte Wert wird beim ersten Start umgerechnet, ein gespeichertes GPS ging bisher beim Laden verloren. WLAN, Modul-Adresse und Port B/C liegen unter den gemeinsamen NVS-Schlüsseln. Lua-Menü als Tabelle (`buildLuaMenu()`), Feld-IDs unverändert; Feld 171 heißt jetzt „Port B Rolle" mit neuer Reihenfolge. **SBUS-Zeitlimit neu:** kommen 2 s lang keine SBUS-Frames, gilt der Bus als verloren (bisher nur Failsafe-Bit). WLAN-Failsafe und OTA-Upload aus RC_Common. Web-API: `portb_role` statt `portb_mode` (alte Sicherungen werden beim Import umgerechnet). Entfernt: `port_function.*`, `lib/port_registry`, `test/test_native`, `test/test_crsf` (Tests jetzt in RC_Common). **GPS-Baudrate „Auto“** (Vorgabe für GPS, wie Betaflight): Der Port sucht die Baudrate des GPS selbst, stellt es auf 115200 Baud und 10 Hz um (ATGM336H und u-blox) und sucht neu, wenn 3 s keine Daten kommen. Port C (SoftwareSerial) sucht immer automatisch, höchstens 38400 Baud. Port-B-Baudrate in der Weboberfläche jetzt als Auswahlliste mit „Auto“. |

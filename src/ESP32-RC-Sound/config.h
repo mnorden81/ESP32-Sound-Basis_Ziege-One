@@ -56,6 +56,14 @@
 // sind aber nicht Teil des esp32dev-Builds.
 // Motor(0) + 24 Zusatzsounds = 25 Slots.
 static constexpr int RCSOUND_NUM_SLOTS = 25;
+static constexpr int RCSOUND_NUM_SOUNDS = RCSOUND_NUM_SLOTS - 1;
+
+// v7.24: Sound-Zuordnung (sound_map.h). Jede Datei behaelt ihren Namen, pro
+// Platz steht in config.Sound_File[], welche Datei dort spielt: 0 = Loop,
+// 1 = Standgas, 2 = Start, 3.. = Sound 1-24. Leerer Name = Platz leer.
+static constexpr int    SND_FILE_SLOTS    = 3 + RCSOUND_NUM_SOUNDS;
+static constexpr size_t SND_NAME_MAX_BASE = 40;   // SD-Karte: Name ohne ".wav"
+static constexpr size_t SND_FILE_LEN      = 48;   // >= SND_NAME_MAX_BASE + ".wav" + '\0'
 
 // Anzahl der unabhaengig konfigurierbaren CRSF-Gruppenadressen fuer die
 // 16 Einzelkanaele (Quelltyp 6, "MKan" 80-95). Jede Gruppe liefert 8
@@ -163,6 +171,10 @@ struct ConfigData {
     // Bestandsgeraete beim ersten Boot nach einem Firmware-Update, siehe
     // Migrations-Default in loadConfig() (dort: p.getInt("wfalways", 1)).
     bool     WifiAlwaysOn;
+
+    // v7.24: Dateiname je Platz (ohne "/"), siehe SND_FILE_SLOTS oben.
+    // Werkseinstellung: loop.wav, shut.wav, start.wav, sound1.wav ...
+    char Sound_File[SND_FILE_SLOTS][SND_FILE_LEN];
 };
 
 extern ConfigData    config;

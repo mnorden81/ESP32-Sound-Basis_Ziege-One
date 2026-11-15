@@ -6,6 +6,7 @@
 #include <Preferences.h>
 #include <initializer_list>
 #include "src/RC_Common/settings_common.h"
+#include "sound_map.h"
 
 ConfigData    config;
 bool          configDirty   = false;
@@ -77,6 +78,7 @@ void Reset_all() {
     config.WifiAutoTimeoutSec  = 60;
     // Siehe Erklaerung in config.h - bewusst per Default AN.
     config.WifiAlwaysOn        = true;
+    for (int i = 0; i < SND_FILE_SLOTS; i++) soundMapDefaultName(i, config.Sound_File[i]);
     configDirty = true;
 }
 
@@ -230,6 +232,16 @@ void loadConfig() {
         // SBUS_Gruppen_Mode in config.h), genau wie bei Einkanal_mode oben.
         config.SBUS_Gruppen_Mode[i] = p.getInt(key, 0);
     }
+    // v7.24: Sound-Zuordnung. Fehlt der Schluessel (bis v7.23), bleiben die
+    // festen Namen loop.wav ... sound24.wav aus Reset_all().
+    if (p.getBytesLength("sfiles") == sizeof(config.Sound_File)) {
+        p.getBytes("sfiles", config.Sound_File, sizeof(config.Sound_File));
+        for (int i = 0; i < SND_FILE_SLOTS; i++) {
+            config.Sound_File[i][SND_FILE_LEN - 1] = '\0';
+            if (config.Sound_File[i][0] && !soundNameOk(config.Sound_File[i], false))
+                config.Sound_File[i][0] = '\0';
+        }
+    }
     config.sport_poll_id[0]       = (uint8_t)p.getInt("spid0", 0xA1);
     config.sport_poll_id[1]       = (uint8_t)p.getInt("spid1", 0x22);
     config.Source_Ebenen_Um_Kanal = p.getInt("ebum", 999);
@@ -337,6 +349,7 @@ void saveConfigForce() {
         snprintf(key,sizeof(key),"sgmo%d",i);
         p.putInt(key, config.SBUS_Gruppen_Mode[i]);
     }
+    p.putBytes("sfiles", config.Sound_File, sizeof(config.Sound_File));
     p.putInt("spid0",(int)config.sport_poll_id[0]);
     p.putInt("spid1",(int)config.sport_poll_id[1]);
     p.putInt("ebum", config.Source_Ebenen_Um_Kanal);
