@@ -48,59 +48,32 @@
    Port B (nur V3, zusätzlich): GPIO 32 RX  |  GPIO 33 TX
      Schaltung (S.Port-Rolle): GPIO33 -[1N4148 Anode->Kathode]-> S.Port Signal <- GPIO32
 
-   ── Das Port-Modell (V3) ──────────────────────────────────────────────────
+   ── Das Port-Modell (V3) ─────────────────────────────
    Port A = RC-Eingang, fest (CRSF oder SBUS-Familie).
-   Port B = echter zweiter Hardware-UART (GPIO32/33), Rolle waehlbar in Web
-            UND CRSF/Lua-Menue, mit frei einstellbarer Baudrate je Rolle:
-            Rollen aus RC_Common (uart_roles.h, gleiche Nummern in allen
-            Modulen): Aus, CRSF (Modulkette: der CRSF-Router reicht Frames
-            zwischen Port A und Port B weiter, nur bei RC-System CRSF),
-            S.Port-Master (LiPo-Telemetrie), GPS oder Raw-UART.
-            Port C hat keinen freien Hardware-UART (UART0 = USB/Debug,
-            UART1/2 = Port A und B) und laeuft per SoftwareSerial. CRSF
-            (420000 Baud) und S.Port sind darauf nicht zuverlaessig moeglich,
-            deshalb bleibt Port C nur GPS an/aus. Die GPS-Baudrate sucht
-            Port C selbst (bis 38400, RC_Common "Auto").
-   Port C = GPS (SoftwareSerial GPIO27/14) fuer CRSF-GPS-Telemetrie
-            (Geschwindigkeit/Position an den Sender) - unabhaengiger
-            An/Aus-Schalter. Kollidiert mit SBUS als Bus-Protokoll (beide
-            belegen GPIO27), siehe setup()/gpsPinConflict.
-   Start der Rollen, Telemetrie und Baudraten-Listen kommen aus RC_Common
-   (uart_ports.h), gleich wie in Multiswitch und Soundmodul Mini.
+   Port B = zweiter Hardware-UART (GPIO32/33), Rolle in Web und Lua
+            waehlbar (RC_Common uart_roles.h): Aus, CRSF (Modulkette, nur
+            bei RC-System CRSF), S.Port-Master, GPS oder Raw.
+   Port C = GPS per SoftwareSerial (GPIO27/14), nur an/aus, Baudrate
+            "Auto" bis 38400. Kollidiert mit SBUS (beide GPIO27), siehe
+            setup()/gpsPinConflict. Ein dritter Hardware-UART fehlt
+            (UART0 = USB/Debug).
 
-   ── WLAN & Weboberflaeche ─────────────────────────────────────────────────
-   Der Access Point (SoftAP) laesst sich auf drei Wegen aktivieren:
-     - GPIO13 kurz auf GND beim Einschalten (immer verfuegbar, auch ganz
-       ohne Sender).
-     - Manueller Schalter in Web-Tab "WiFi" bzw. CRSF/Lua-Feld 174 ("WLAN
-       jetzt") - wirkt sofort, ohne Neustart, ohne Persistierung.
-     - Automatischer Failsafe (Web-Tab "WiFi"/Lua-Felder 175-176): schaltet
-       das WLAN von selbst ein, wenn laenger als die eingestellte Zeit
-       (5-240s, Standard 60s) kein gueltiges RC-Signal anliegt - schaltet
-       NUR ein, nie automatisch wieder aus (verhindert, dass eine laufende
-       WLAN-Konfiguration/ein laufendes OTA-Update abbricht, sobald kurz
-       wieder ein gueltiges Signal hereinkommt).
-   Ueber die Weboberflaeche lassen sich Sounds/Konfiguration verwalten,
-   Sound-Dateien und Konfigurations-Backups hoch-/herunterladen bzw.
-   loeschen, und eine neue Firmware direkt per WLAN aufspielen (OTA, siehe
-   WebServerManager.cpp) - ohne das Modul auszubauen. Empfehlung aus der
-   Praxis: ein OTA-Update moeglichst bei ueber ESC/Akku bestromtem Modul
-   durchfuehren, nicht nur ueber USB (manche USB-Anschluesse liefern beim
-   Flash-Schreiben nicht genug Strom, ein dadurch ausgeloester Brownout-
-   Reset bricht den Upload ab). WiFi.softAP() gilt projektweit als die
-   fehleranfaelligste Einzeloperation: ein Start mit noch stark belegtem/
-   fragmentiertem Heap (z.B. nachdem Sounds/Uploads liefen) kann
-   fehlschlagen - enableAP() (WebServerManager.cpp) loggt deshalb bei
-   jedem Start den freien Heap und meldet einen Fehlschlag explizit.
+   ── WLAN & Weboberflaeche ─────────────────────────────
+   Access Point an: GPIO13 beim Einschalten auf GND, Schalter im Web-Tab
+   "WiFi" bzw. Lua-Feld 174 ("WLAN jetzt", sofort, nicht gespeichert),
+   "WLAN dauerhaft an" oder Auto-Failsafe (Lua 175-176: nach 5-240 s ohne
+   RC-Signal an, nie automatisch aus). Weboberflaeche: Sounds und
+   Konfiguration verwalten, Backups, OTA-Update (WebServerManager.cpp).
+   OTA moeglichst bei ueber ESC/Akku bestromtem Modul (USB-Brownout).
+   enableAP() loggt den freien Heap, weil WiFi.softAP() bei
+   fragmentiertem Heap fehlschlagen kann.
 
    ── CRSF-/Lua-Parametermenue ───────────────────────────────────────────
-   Bei RC-System ELRS (CRSF) ist das Modul zusaetzlich vollstaendig ueber
-   das native CRSF-Parametermenue des Senders konfigurierbar (z.B. als
-   Lua-Script in EdgeTX). 185 Feld-IDs, lueckenlos 1..185 (Tabelle in buildLuaMenu()) -
-   die vollstaendige Feldliste steht direkt beim Parameter-System weiter
-   unten. Jedes Modul erhaelt seine CRSF-Busadresse (0xC0+WM-Adresse) und
-   seinen Telemetrie-Zeitslot aus der WM-Adresse (Wilhelm-Meier-Schema),
-   damit sich mehrere Module am selben Bus nicht gegenseitig stoeren.
+   Bei RC-System ELRS (CRSF) auch ueber das CRSF-/Lua-Menue des Senders
+   einstellbar. 185 Feld-IDs, lueckenlos 1..185 (Tabelle in
+   buildLuaMenu(), Feldliste beim Parameter-System weiter unten).
+   CRSF-Busadresse 0xC0+WM-Adresse und Telemetrie-Zeitslot nach dem
+   Wilhelm-Meier-Schema.
 
    ── Weitere Module dieses Projekts ───────────────────────────────────────
    config.cpp/.h         Persistente Konfiguration (NVS/Preferences),
@@ -113,9 +86,7 @@
                           S.Port-LiPo, GPS, Lua-Menue-Tabelle, gemeinsame
                           NVS-Schluessel, WLAN-Failsafe, OTA-Update.
 
-   Rahmenbedingung dieses Projekts: Aenderungen werden ohne Zugriff auf
-   einen Compiler oder ein echtes Geraet vorgenommen - die Probe am
-   Geraet obliegt dem Nutzer.
+   Versionsgeschichte: siehe CHANGELOG.md im Hauptordner des Repos.
 */
 
 #include <Arduino.h>
@@ -136,16 +107,6 @@
 #include <new>
 
 uint16_t Version = 724;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (724 -> "7.24")
-// v7.24: Sound-Zuordnung: Dateien behalten ihren Namen (sound_map.h). Neuer
-//        Web-Tab "Speicher" (alle Sounds der SD-Karte, Auswahlliste je Platz,
-//        Hochladen, Loeschen) und Lua-Ordner "Sound-Zuordnung" (Felder
-//        182-185). Vorhandene loop.wav ... sound24.wav bleiben auf ihrem Platz.
-// v7.23: Lua uebersichtlicher (RC_Common 1.3.0): Chunk-Fix fuer lange Auswahlfelder
-//        (Port B Baudrate), Quelle/RC-System in Ordnernamen, Felder ohne Wirkung
-//        ausgeblendet (SBUS-Einkanal/-Gruppen, PWM min/max bei V3, Kanal bei
-//        Aus/Dauer, Baudrate bei Port B Aus), RC-System im Lua nur Anzeige.
-// v7.22: Lua: Kanal-Felder bleiben bei Aus/Dauer/kein Pin Zahlenfelder (gesperrt)
-//        statt Info "Deaktiviert" - sonst erst nach Menue-Verlassen aenderbar.
 char versionString[6];
 bool gpsPinConflict = false; // true, wenn Port C (GPS) UND SBUS gleichzeitig gewaehlt sind (GPIO27-Konflikt, siehe setup())
 // Ob der AP gerade aktiv ist, wird NICHT hier gespiegelt: loop() fragt dafuer
