@@ -38,6 +38,7 @@ void Reset_all() {
     config.Einkanal_Channel       = 999;
     config.Einkanal_mode          = 0;
     config.Einkanal_RC_System     = 0;
+    config.Funk                   = FunkConfig();   // v7.25
     config.modul_adress           = 0;
     // Gruppe 1 (Index 0) defaultmaessig = modul_adress (0) - Einkanal-/
     // Einzelbetrieb funktioniert "out of the box" auch ohne weitere
@@ -218,7 +219,8 @@ void loadConfig() {
     config.throttle_dead_band     = p.getInt("thrdb",10);
     config.Einkanal_Channel       = p.getInt("ekch", 999);
     config.Einkanal_mode          = p.getInt("ekmo", 0);
-    config.Einkanal_RC_System     = p.getInt("ekrc", 0);
+    config.Einkanal_RC_System     = constrain(p.getInt("ekrc", 0), 0, 6);
+    funkConfigLoad(p, config.Funk);   // v7.25
     for (int i = 0; i < RCSOUND_NUM_GROUPS; i++) {
         snprintf(key,sizeof(key),"gadr%d",i);
         config.EK_Gruppen_Adresse[i] = p.getInt(key, (i==0) ? 0 : 255);
@@ -339,6 +341,7 @@ void saveConfigForce() {
     p.putInt("ekch", config.Einkanal_Channel);
     p.putInt("ekmo", config.Einkanal_mode);
     p.putInt("ekrc", config.Einkanal_RC_System);
+    funkConfigSave(p, config.Funk);   // v7.25
     for (int i = 0; i < RCSOUND_NUM_GROUPS; i++) {
         snprintf(key,sizeof(key),"gadr%d",i);
         p.putInt(key, config.EK_Gruppen_Adresse[i]);
@@ -359,7 +362,7 @@ void saveConfigForce() {
     p.putInt("pwmin",config.PWM_scale_min);
     p.putInt("pwmax",config.PWM_scale_max);
     // WLAN, Modul-Adresse, Port B/C unter den gemeinsamen Schluesseln
-    // (RC_Common). Der manuelle "WLAN jetzt"-Schalter (Web/Lua-Feld 174)
+    // (RC_Common). Der manuelle "WLAN jetzt"-Schalter (Web/Lua "WLAN jetzt")
     // wird bewusst NICHT gespeichert, nur die Failsafe-Einstellungen.
     RcCommonSettings cs;
     configToCommon(cs);
