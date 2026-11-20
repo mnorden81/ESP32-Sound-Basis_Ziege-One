@@ -1,0 +1,59 @@
+{
+  "title": "ESP32-Sound Prüfstand",
+  "firmwares": [
+    {
+      "id": "sound",
+      "name": "ESP32-RC-Sound",
+      "dir": "src/ESP32-RC-Sound",
+      "page": {
+        "file": "WebServerManager.cpp",
+        "var": "RCSOUND_HTML"
+      },
+      "mock": "mock_sound_basis.js",
+      "version": "Version",
+      "lua": {
+        "files": [
+          "src/RC_Common/*.h",
+          "*.h",
+          "*.cpp",
+          "*.ino",
+          "!XT_I2S*"
+        ],
+        "expect_max": "CRSF_PARAM_COUNT",
+        "allow_warnings": [
+          "Text zur Laufzeit: einSelStr",
+          "Text zur Laufzeit: spdSelStr"
+        ]
+      },
+      "api": {
+        "GET /api/config": "buildConfigJson",
+        "GET /api/debug": "handleApiDebug",
+        "GET /api/soundfiles": "handleApiSoundFiles"
+      },
+      "api_files": [
+        "src/RC_Common/*.h",
+        "*.h",
+        "*.cpp",
+        "*.ino",
+        "!XT_I2S*"
+      ],
+      "api_init": [
+        "Reset_all"
+      ],
+      "variants": [
+        {
+          "id": "v1",
+          "name": "Platine V1"
+        },
+        {
+          "id": "v2",
+          "name": "Platine V2"
+        },
+        {
+          "id": "v3",
+          "name": "Platine V3 (Port A/B/C)"
+        }
+      ]
+    }
+  ]
+}
