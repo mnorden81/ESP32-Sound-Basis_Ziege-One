@@ -61,16 +61,22 @@
    ── WLAN & Weboberflaeche ─────────────────────────────
    Access Point an: GPIO13 beim Einschalten auf GND, Schalter im Web-Tab
    "WiFi" bzw. Lua-Feld 174 ("WLAN jetzt", sofort, nicht gespeichert),
-   "WLAN dauerhaft an" oder Auto-Failsafe (Lua 175-176: nach 5-240 s ohne
+   "WLAN dauerhaft an" oder Auto-Failsafe (Lua "Auto-WLAN": nach 5-240 s ohne
    RC-Signal an, nie automatisch aus). Weboberflaeche: Sounds und
    Konfiguration verwalten, Backups, OTA-Update (WebServerManager.cpp).
    OTA moeglichst bei ueber ESC/Akku bestromtem Modul (USB-Brownout).
    enableAP() loggt den freien Heap, weil WiFi.softAP() bei
    fragmentiertem Heap fehlschlagen kann.
 
+   ── Funk (v7.25) ────────────────────────────────────────────────────────
+   RC-System 5 = CRSF + Funk senden (Zentrale am Empfaenger), 6 = CRSF aus
+   Funk (Teilnehmer, Port A frei). ESP-NOW ueber RC_Common funk_link, gleich
+   wie Multiswitch und CRSF-Router. Der Access Point laeuft dann auf dem
+   Funkkanal.
+
    ── CRSF-/Lua-Parametermenue ───────────────────────────────────────────
    Bei RC-System ELRS (CRSF) auch ueber das CRSF-/Lua-Menue des Senders
-   einstellbar. 185 Feld-IDs, lueckenlos 1..185 (Tabelle in
+   einstellbar. 57 Feld-IDs, lueckenlos 1..57 (Tabelle in
    buildLuaMenu(), Feldliste beim Parameter-System weiter unten).
    CRSF-Busadresse 0xC0+WM-Adresse und Telemetrie-Zeitslot nach dem
    Wilhelm-Meier-Schema.
@@ -103,10 +109,11 @@
 #include "src/RC_Common/gps_speed.h"
 #include "src/RC_Common/lua_menu.h"       // CRSF-/Lua-Menue als Tabelle
 #include "src/RC_Common/wifi_failsafe.h"
+#include "src/RC_Common/funk_link.h"     // v7.25: Funk (ESP-NOW)
 #include "sound_map.h"
 #include <new>
 
-uint16_t Version = 724;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (724 -> "7.24")
+uint16_t Version = 725;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (725 -> "7.25")
 char versionString[6];
 bool gpsPinConflict = false; // true, wenn Port C (GPS) UND SBUS gleichzeitig gewaehlt sind (GPIO27-Konflikt, siehe setup())
 // Ob der AP gerade aktiv ist, wird NICHT hier gespiegelt: loop() fragt dafuer
@@ -131,10 +138,16 @@ volatile uint8_t engine_State = OFF;
 
 // Boot-Snapshot: RC-System, Port-B-Rolle/Baudrate und Port-C(GPS)-Zustand
 // werden einmalig in setup() aus config uebernommen. Ein spaeteres Aendern
-// ueber Web/Lua (Felder 161/171-173) schreibt sofort in config, wirkt aber
+// ueber Web/Lua (RC-System, Port B/C) schreibt sofort in config, wirkt aber
 // bewusst erst nach einem Neustart - die zugehoerigen UARTs sind schon
 // initialisiert und duerfen waehrend des Betriebs nicht umgeschaltet werden.
 int      Einkanal_RC_System_boot = 0;
+// ── Funk (v7.25, RC_Common funk_link, wie Multiswitch v5.04) ───────────
+// RC-System 5 = Zentrale: CRSF vom Kabel (Port A) geht zusaetzlich in den
+// Funk (Router-Port D). RC-System 6 = Teilnehmer: CRSF kommt nur aus dem
+// Funk, Port A bleibt frei.
+FunkLink funk;              // auch in WebServerManager.cpp
+uint8_t  FunkMode_boot = 0; // 0 Kabel, 1 Zentrale, 2 Teilnehmer (beim Start)
 uint8_t  PortB_Role_boot        = UROLE_OFF;
 uint32_t PortB_Baud_boot        = 420000;
 int      PortC_GPS_Enabled_boot = 0;
@@ -150,7 +163,7 @@ static void gpsSoftSetBaud(uint32_t baud) {
 // Liefert den fuer Port B freien Hardware-UART - Port A belegt bereits den
 // jeweils anderen (CRSF=Serial2, SBUS-Familie=Serial1).
 static HardwareSerial* portBFreeSerial() {
-    return (config.Einkanal_RC_System == 4) ? &Serial1 : &Serial2;
+    return rcIsCrsf(config.Einkanal_RC_System) ? &Serial1 : &Serial2;
 }
 uint16_t einkanal_Data           = 0;   // 1 Bit/Schalter - Quelltyp "Einkanal" 70-77
 uint16_t einkanal_SpeicherWM     = 0;
@@ -212,7 +225,7 @@ static constexpr unsigned long CRSF_TIMEOUT_MS = 2000;
 static unsigned long lastCrsfPacket = 0;
 
 static void checkCrsfTimeout() {
-    if (Einkanal_RC_System_boot != 4) return;
+    if (!rcIsCrsf(Einkanal_RC_System_boot)) return;
     if (millis() - lastCrsfPacket > CRSF_TIMEOUT_MS) BUS_OK = false;
 }
 
@@ -224,7 +237,7 @@ static constexpr unsigned long SBUS_TIMEOUT_MS = CRSF_TIMEOUT_MS;
 static unsigned long lastSbusFrameMs = 0;
 
 static void checkSbusTimeout() {
-    if (Einkanal_RC_System_boot == 4) return;
+    if (rcIsCrsf(Einkanal_RC_System_boot)) return;
     if (BUS_OK && millis() - lastSbusFrameMs > SBUS_TIMEOUT_MS) BUS_OK = false;
 }
 
@@ -299,10 +312,15 @@ static void updateGroupFromAddress(uint8_t addr, uint8_t bits); // Gruppenadress
 float ramp_throttle(float t); float floatMap(float x,float a,float b,float c,float d);
 void handleSound(uint8_t idx, XT_Wav_Class* snd);
 
-// ======== CRSF-Parametersystem (185 Parameter) ==========================
+// ======== CRSF-Parametersystem (57 Parameter) ===========================
 // lib/sound_slots/sound_slots.h und test/test_sound_slots/ sind nicht Teil
 // des esp32dev-Builds (nichts in src/ bindet sie ein) und bleiben ungenutzt
 // liegen.
+//
+// v7.25: Feld-IDs neu durchnummeriert (lueckenlos 1..57). Statt je einem
+// Ordner pro Sound (bisher 24 x 6 Felder) gibt es einen Ordner "Sounds" mit
+// Auswahl "Sound Nr" (gleich in allen Soundmodulen), dazu der Ordner "Funk".
+// Die Felder der Einstellungen behalten ihre Reihenfolge (alte ID - 136).
 //
 //  0: Root  1: Version Info
 //  2: Folder Motor {3..15}
@@ -310,32 +328,36 @@ void handleSound(uint8_t idx, XT_Wav_Class* snd);
 //   7: Sel QuelleSpd  8: U8 KanalSpd   9: U8 Vol
 //  10: U8 Drzmin  11: U8 Drzmax/2  12: U8 Standgas  13: U8 Rampe  14: U8 Totband
 //  15: Info HW-Version (aktuell aktive Hardware)
-//
-//  Sound s(1-24): fi=16+(s-1)*6  → endet bei 159
-//   fi+0:Folder fi+1:Sel Quelle fi+2:U8 Kanal fi+3:U8 Vol fi+4:Sel Mode fi+5:Sel Test
-//
-//  160: Folder Einstellungen {161..169, 171..181}
-//   161:Sel RC-Sys  162:U8 ModAdr  163:U8 EKKanal  164:Sel EKMode
-//   165:Sel HardwareConfig  V1;V2;V3  (siehe config.h)
-//   166:U8 PWM min(/16)  167:U8 PWM max(/16)
-//   168:U8 Gruppenadr.1  169:U8 Gruppenadr.2  (255=aus, nur CRSF)
-//  170: Info Gerätename
-//   171:Sel Port B Rolle  Aus;CRSF;S.Port;GPS;Raw (RC_Common, uart_roles.h;
-//       bis v7.20: Aus;CRSF;S.Port;Hott;Raw;GPS)
-//   172:Sel Port B Baudrate  uartBaudOptions() (feste Liste, im Web frei)
-//   173:Sel Port C (GPS)  Aus;An
-//   174:Sel WLAN jetzt  Aus;Ein  (wirkt SOFORT, nicht persistiert - siehe luaSetWifiNow)
-//   175:Sel Auto-WLAN bei Signalverlust  Aus;Ein  (persistiert, siehe config.WifiAutoEnable)
-//   176:U8 Auto-WLAN Timeout (s)  (5-240, siehe config.WifiAutoTimeoutSec)
-//   177:U8 SBUS Gruppe1 Kanal (255=aus)  178:Sel SBUS Gruppe1 Adresse  Adr0-3
-//   179:U8 SBUS Gruppe2 Kanal (255=aus)  180:Sel SBUS Gruppe2 Adresse  Adr0-3
-//   (177-180: SBUS-Pendant zu 168/169, siehe EK_Gruppen_Adresse/
-//   SBUS_Gruppen_Channel in config.h)
-//   181:Sel WLAN dauerhaft an  Aus;Ein  (persistiert, siehe config.WifiAlwaysOn;
-//   Default AN - ueberstimmt 174/175/176 komplett, siehe wifiFailsafeCheck())
-//  182: Folder Sound-Zuordnung {183..185} (v7.24)
-//   183:Sel Platz (nur Auswahl, nicht gespeichert)  184:Sel Datei  185:Sel Groesse (nur Anzeige)
-static constexpr uint8_t SOUNDMAP_FI = 182;
+//  16: Folder Sounds {17..23}
+//   17: Sel Sound Nr (nur Auswahl, nicht gespeichert)  18: Sel Name (Datei, nur Anzeige)
+//   19: Sel Quelle  20: U8 Kanal  21: U8 Volumen  22: Sel Wiedergabe Mode  23: Sel Test Sound
+//  24: Folder Einstellungen {25..33, 35..45}
+//   25: Info RC-System (nur Anzeige, Umstellen in der Web-UI)  26: U8 ModAdr
+//   27: U8 EKKanal  28: Sel EKMode (nur SBUS)
+//   29: Sel HardwareConfig  V1;V2;V3  (siehe config.h)
+//   30: U8 PWM min(/16)  31: U8 PWM max(/16)  (nur V1/V2)
+//   32: U8 Gruppenadr.1  33: U8 Gruppenadr.2  (255=aus, nur CRSF)
+//  34: Info Geraetename
+//   35: Sel Port B Rolle  Aus;CRSF;S.Port;GPS;Raw (RC_Common, uart_roles.h)
+//   36: Sel Port B Baudrate  uartBaudOptions() (feste Liste, im Web frei)
+//   37: Sel Port C (GPS)  Aus;An
+//   38: Sel WLAN jetzt  Aus;Ein  (wirkt SOFORT, nicht persistiert - siehe luaSetWifiNow)
+//   39: Sel Auto-WLAN bei Signalverlust  Aus;Ein  (persistiert, siehe config.WifiAutoEnable)
+//   40: U8 Auto-WLAN Timeout (s)  (5-240, siehe config.WifiAutoTimeoutSec)
+//   41: U8 SBUS Gruppe1 Kanal (255=aus)  42: Sel SBUS Gruppe1 Modus
+//   43: U8 SBUS Gruppe2 Kanal (255=aus)  44: Sel SBUS Gruppe2 Modus  (nur SBUS)
+//   45: Sel WLAN dauerhaft an  Aus;Ein  (persistiert, siehe config.WifiAlwaysOn;
+//       Default AN - ueberstimmt 38/39/40 komplett, siehe wifiFailsafeCheck())
+//  46: Folder Sound-Zuordnung {47..49}
+//   47: Sel Platz (nur Auswahl, nicht gespeichert)  48: Sel Datei  49: Sel Groesse (nur Anzeige)
+//  50: Folder Funk {51..57}: 51 Betrieb, 52 Kennung, 53 Kanal, 54 Leistung,
+//      55 Kanaele alle (Zentrale), 56 Rueckkanal (Teilnehmer), 57 Info Verbindung
+static constexpr uint8_t SOUNDS_FI        = 16;
+static constexpr uint8_t SETTINGS_FI      = 24;
+static constexpr uint8_t SOUNDMAP_FI      = 46;
+static constexpr uint8_t FUNK_FI          = 50;
+static constexpr uint8_t CRSF_PARAM_COUNT = 57;
+static_assert(FUNK_FI + 7 == CRSF_PARAM_COUNT, "Lua-Feldnummern nicht lueckenlos");
 
 
 // ── CRSF-Geraeteadresse + Ping-Slot aus der WM-Adresse (Wilhelm-Meier-Schema) ──
@@ -483,7 +505,7 @@ static int einSelWrite(uint8_t val, int oldCfg) {
 // unveraendert (Liste oben), gespeicherte Sender-Profile laufen weiter.
 // Felder, die je nach Zustand anders aussehen (z. B. "Kanal Nr" wird bei
 // "Dauer"/"Aus" zur Info), regeln das ueber eine view-Funktion.
-static LuaItem luaItems[186];
+static LuaItem luaItems[CRSF_PARAM_COUNT + 1];
 static LuaMenu luaMenu(luaItems, sizeof(luaItems) / sizeof(luaItems[0]));
 
 static void luaShowVersion(uint8_t, LuaView& v, char* buf) {
@@ -513,34 +535,29 @@ static void luaSourceText(int cfg, char* out, size_t len) {
     if (t <= 6) snprintf(out, len, "%s %d", N[t], einNr(cfg));
     else        snprintf(out, len, "%s", N[t]);
 }
-static void luaShowSoundFolder(uint8_t s, LuaView& v, char* buf) {
-    char src[12];
-    luaSourceText(config.Source_Start_Sound[s], src, sizeof(src));
-    snprintf(buf, LUA_VIEW_BUF, "Sound %d (%s)", s, src);
-    v.name = buf;
-}
 static void luaShowMotorFolder(uint8_t, LuaView& v, char* buf) {
     char src[12];
     luaSourceText(config.Source_Start_Sound[0], src, sizeof(src));
     snprintf(buf, LUA_VIEW_BUF, "Motor (%s)", src);
     v.name = buf;
 }
-static const char* const RC_SYS_NAMES[] = {"FrSky", "FlySky", "ELRS SBUS", "Hott", "ELRS CRSF"};
+static const char* const RC_SYS_NAMES[] = {"FrSky", "FlySky", "ELRS SBUS", "Hott", "ELRS CRSF",
+                                           "CRSF + Funk", "CRSF aus Funk"};   // v7.25: 5/6
 static void luaShowSettingsFolder(uint8_t, LuaView& v, char* buf) {
-    snprintf(buf, LUA_VIEW_BUF, "Einstellungen (%s)", RC_SYS_NAMES[constrain(config.Einkanal_RC_System, 0, 4)]);
+    snprintf(buf, LUA_VIEW_BUF, "Einstellungen (%s)", RC_SYS_NAMES[constrain(config.Einkanal_RC_System, 0, 6)]);
     v.name = buf;
 }
 // v7.23: RC-System im Lua nur Anzeige. Umstellen auf SBUS per Lua haette das
 // Lua selbst abgeschaltet (Lua gibt es nur bei CRSF), jetzt nur in der Web-UI.
 static void luaShowRcSystem(uint8_t, LuaView& v, char* buf) {
-    snprintf(buf, LUA_VIEW_BUF, "%s (Web aendern)", RC_SYS_NAMES[constrain(config.Einkanal_RC_System, 0, 4)]);
+    snprintf(buf, LUA_VIEW_BUF, "%s (Web aendern)", RC_SYS_NAMES[constrain(config.Einkanal_RC_System, 0, 6)]);
     v.text = buf;
 }
 // v7.23: Felder ohne Wirkung ausblenden (CRSF hidden, Feld-IDs bleiben).
 // Einkanal-Kanal/-Mode und SBUS-Gruppen wirken nur bei SBUS, das Lua gibt
 // es nur bei CRSF.
 static void luaHideSbusOnly(uint8_t, LuaView& v, char*) {
-    if (Einkanal_RC_System_boot == 4) v.hidden = true;
+    if (rcIsCrsf(Einkanal_RC_System_boot)) v.hidden = true;
 }
 // PWM min/max gelten nur fuer den PWM-Eingang (Hardware V1/V2)
 static void luaViewPwmScale(uint8_t, LuaView& v, char*) {
@@ -619,9 +636,85 @@ static void    luaSetPlayMode(uint8_t s, uint8_t v) { config.Mode_Sound[s] = v; 
 static uint8_t luaGetTest(uint8_t s)                { return testSoundActive[s] ? 1 : 0; }
 static void    luaSetTest(uint8_t s, uint8_t v)     { if (v == 1) Sound_on_web[s] = true; testSoundActive[s] = (v == 1); }
 
+// ── Ordner "Sounds" (v7.25, gleich in allen Soundmodulen) ────────────────
+// "Sound Nr" waehlt nur aus, welcher Sound gerade bearbeitet wird (nicht
+// gespeichert, wie "Platz" bei der Sound-Zuordnung). Die Felder darunter
+// lesen und schreiben den gewaehlten Sound. Das ELRS-Lua laedt nach einer
+// Aenderung von "Sound Nr" die Zahlen-/Auswahlfelder im Ordner neu, darum
+// ist "Name" eine Auswahl mit nur einem Eintrag statt eines Info-Felds.
+static uint8_t luaSndSel = 1;   // 1..RCSOUND_NUM_SOUNDS
+static char    luaSndNrOpts[4 * RCSOUND_NUM_SOUNDS + 4];
+static uint8_t luaGetSndNr(uint8_t)                 { return luaSndSel - 1; }
+static void    luaSetSndNr(uint8_t, uint8_t v)      { if (v < RCSOUND_NUM_SOUNDS) luaSndSel = v + 1; }
+static void luaShowSndName(uint8_t, LuaView& v, char* buf) {
+    // Name = zugeordnete Datei ohne ".wav"
+    const char* f = config.Sound_File[2 + luaSndSel];
+    size_t n = strlen(f);
+    if (n > 4 && strcasecmp(f + n - 4, ".wav") == 0) n -= 4;
+    if (!n) snprintf(buf, LUA_VIEW_BUF, "(leer)");
+    else    snprintf(buf, LUA_VIEW_BUF, "%.*s", (int)(n < 20 ? n : 20), f);
+    v.text = buf;
+    v.max  = 0;
+    v.value = 0;
+}
+static uint8_t luaGetSelSource(uint8_t)             { return luaGetSource(luaSndSel); }
+static void    luaSetSelSource(uint8_t, uint8_t v)  { luaSetSource(luaSndSel, v); }
+static void    luaShowSelChannel(uint8_t, LuaView& v, char* b) { luaShowChannel(luaSndSel, v, b); }
+static uint8_t luaGetSelChannel(uint8_t)            { return luaGetChannel(luaSndSel); }
+static void    luaSetSelChannel(uint8_t, uint8_t v) { luaSetChannel(luaSndSel, v); }
+static uint8_t luaGetSelVolume(uint8_t)             { return luaGetVolume(luaSndSel); }
+static void    luaSetSelVolume(uint8_t, uint8_t v)  { luaSetVolume(luaSndSel, v); }
+static uint8_t luaGetSelPlayMode(uint8_t)           { return luaGetPlayMode(luaSndSel); }
+static void    luaSetSelPlayMode(uint8_t, uint8_t v){ luaSetPlayMode(luaSndSel, v); }
+static uint8_t luaGetSelTest(uint8_t)               { return luaGetTest(luaSndSel); }
+static void    luaSetSelTest(uint8_t, uint8_t v)    { luaSetTest(luaSndSel, v); }
+
+// ── Ordner "Funk" (v7.25, wie Multiswitch v5.04), wirkt nach Neustart ────
+// "Betrieb" stellt das RC-System auf 4 (Kabel), 5 (Zentrale) oder 6
+// (Teilnehmer). Das Lua gibt es nur mit CRSF, darum ist 4 der Kabel-Wert.
+static uint8_t luaGetFunkMode(uint8_t)            { return funkModeFromRc(config.Einkanal_RC_System); }
+static void    luaSetFunkMode(uint8_t, uint8_t v) { config.Einkanal_RC_System = rcFromFunkMode(config.Einkanal_RC_System, v > 2 ? 2 : v); markDirty(); }
+static uint8_t luaGetFunk(uint8_t i) {
+    switch (i) {
+        case 0: return config.Funk.id;
+        case 1: return config.Funk.ch;
+        case 2: return funkPwrIndex(config.Funk.pwr);
+        case 3: return funkRateIndex(config.Funk.rateMs);
+        default: return config.Funk.back ? 1 : 0;
+    }
+}
+static void luaSetFunk(uint8_t i, uint8_t v) {
+    switch (i) {
+        case 0: config.Funk.id = v; break;
+        case 1: config.Funk.ch = v; break;
+        case 2: config.Funk.pwr = FUNK_PWR_VALUES[v < FUNK_PWR_COUNT ? v : FUNK_PWR_COUNT - 1]; break;
+        case 3: config.Funk.rateMs = FUNK_RATE_VALUES[v < FUNK_RATE_COUNT ? v : FUNK_RATE_COUNT - 1]; break;
+        default: config.Funk.back = (v != 0); break;
+    }
+    funkConfigClamp(config.Funk);
+    markDirty();
+}
+static void luaShowFunkFolder(uint8_t, LuaView& v, char* buf) {
+    if (!funk.active()) { v.name = "Funk (aus)"; return; }
+    snprintf(buf, LUA_VIEW_BUF, "Funk (%s, %s)", funkRoleName(funk.role()),
+             funk.connected() ? "verbunden" : "keine Verbindung");
+    v.name = buf;
+}
+static void luaViewFunkSet(uint8_t, LuaView& v, char*)  { if (funkModeFromRc(config.Einkanal_RC_System) == 0) v.hidden = true; }
+static void luaViewFunkRate(uint8_t, LuaView& v, char*) { if (config.Einkanal_RC_System != 5) v.hidden = true; }
+static void luaViewFunkBack(uint8_t, LuaView& v, char*) { if (config.Einkanal_RC_System != 6) v.hidden = true; }
+static void luaViewFunkInfo(uint8_t, LuaView& v, char* buf) {
+    if (!funk.active()) { v.text = "Funk aus"; return; }
+    if (funk.conflict()) { v.text = "2. Zentrale!"; return; }
+    if (!funk.connected()) { v.text = "keine Gegenstelle"; return; }
+    snprintf(buf, LUA_VIEW_BUF, "%u Gegenst. %.1f%% %ddBm",
+             (unsigned)funk.partnerCount(), funk.worstLoss(), (int)funk.worstRssi());
+    v.text = buf;
+}
+
 // ── Einstellungen ────────────────────────────────────────────────────────
 static uint8_t luaGetModAdr(uint8_t)                { return (uint8_t)constrain(config.modul_adress, 0, 20); }
-static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; crsf.setDeviceAddress(crsfAddrFromWM()); markDirty(); }
+static void    luaSetModAdr(uint8_t, uint8_t v)     { config.modul_adress = v; crsf.setDeviceAddress(crsfAddrFromWM()); funk.setCrsfAddr(crsfAddrFromWM()); markDirty(); }
 // Kanal mit 999 = aus: arg 0 Einkanal, 1/2 SBUS-Gruppe 1/2
 static int*    luaChannelRef(uint8_t a)             { return a == 0 ? &config.Einkanal_Channel : &config.SBUS_Gruppen_Channel[a - 1]; }
 static uint8_t luaGetBusChannel(uint8_t a)          { int c = *luaChannelRef(a); return c == 999 ? 255 : (uint8_t)constrain(c, 0, 15); }
@@ -661,7 +754,7 @@ static void    luaSetPortCGps(uint8_t, uint8_t v) {
     config.PortC_GPS_Enabled = v; markDirty();
     Serial.printf("!!! Port C (GPS) -> %d (wirkt erst nach Neustart) – NEUSTART ERFORDERLICH !!!\n", v);
 }
-// 174 "WLAN jetzt" wirkt sofort und wird nicht gespeichert; der naechste
+// "WLAN jetzt" wirkt sofort und wird nicht gespeichert; der naechste
 // Start haengt wieder von GPIO13 bzw. "WLAN dauerhaft an" ab.
 static uint8_t luaGetWifiNow(uint8_t)               { return WebServerManager::isApActive() ? 1 : 0; }
 static void    luaSetWifiNow(uint8_t, uint8_t v)    { if (v) WebServerManager::enableAP(); else WebServerManager::disableAP(); }
@@ -669,12 +762,12 @@ static uint8_t luaGetWifiAuto(uint8_t)              { return config.WifiAutoEnab
 static void    luaSetWifiAuto(uint8_t, uint8_t v)   { config.WifiAutoEnable = v; markDirty(); }
 static uint8_t luaGetWifiTimeout(uint8_t)           { return (uint8_t)constrain(config.WifiAutoTimeoutSec, 5, 240); }
 static void    luaSetWifiTimeout(uint8_t, uint8_t v){ config.WifiAutoTimeoutSec = v; markDirty(); }
-// 181 "WLAN dauerhaft an" wirkt erst ab dem naechsten Start (kein
+// "WLAN dauerhaft an" wirkt erst ab dem naechsten Start (kein
 // enableAP() aus dem CRSF-Handler heraus, siehe Kommentar in setup())
 static uint8_t luaGetWifiAlways(uint8_t)            { return config.WifiAlwaysOn ? 1 : 0; }
 static void    luaSetWifiAlways(uint8_t, uint8_t v) { config.WifiAlwaysOn = v; markDirty(); }
 
-// ── Sound-Zuordnung (v7.24, Felder 182-185) ───────────────────────────────
+// ── Sound-Zuordnung (v7.24) ─────────────────────────────────────────────
 // "Platz" waehlt nur aus, welcher Platz gerade bearbeitet wird (nicht
 // gespeichert). "Datei" zeigt die Dateien im Sound-Speicher als
 // Auswahlliste: "(leer)", dann die aktuelle Datei des Platzes, dann die
@@ -763,40 +856,46 @@ static void buildLuaMenu() {
     m.u8(14, 2, "Standgas Totband", 0, 50, "%", luaGetDeadBand, luaSetDeadBand);
     m.info(15, 2, "Hardware", "")->view = luaShowHardware;
 
-    // Sound s (1-24): Ordner fi = 16 + (s-1)*6, Felder fi+1 .. fi+5
-    for (uint8_t s = 1; s <= 24; s++) {
-        uint8_t fi = 16 + (s - 1) * 6;
-        LuaItem* f = m.folder(fi, 0, "Sound");
-        f->arg = s; f->view = luaShowSoundFolder;
-        m.select(fi + 1, fi, "Quelle", einSelStr(), luaGetSource, luaSetSource, s)->view = luaShowSource;
-        m.u8(fi + 2, fi, "Kanal Nr", 1, 16, "", luaGetChannel, luaSetChannel, s)->view = luaShowChannel;
-        m.u8(fi + 3, fi, "Volumen", 0, 200, "", luaGetVolume, luaSetVolume, s);
-        m.select(fi + 4, fi, "Wiedergabe Mode", "Normal;Loop;Tippbetrieb", luaGetPlayMode, luaSetPlayMode, s);
-        m.select(fi + 5, fi, "Test Sound", AUS_EIN, luaGetTest, luaSetTest, s);
+    // v7.25: ein Ordner "Sounds" mit Auswahl "Sound Nr"
+    {
+        size_t len = 0;
+        luaSndNrOpts[0] = '\0';
+        for (int i = 1; i <= RCSOUND_NUM_SOUNDS; i++)
+            len += snprintf(luaSndNrOpts + len, sizeof(luaSndNrOpts) - len, "%s%d", i > 1 ? ";" : "", i);
     }
+    const uint8_t S = SOUNDS_FI;
+    m.folder(S, 0, "Sounds");
+    m.select(S + 1, S, "Sound Nr", luaSndNrOpts, luaGetSndNr, luaSetSndNr);
+    m.select(S + 2, S, "Name", "-", luaGetZero, nullptr)->view = luaShowSndName;
+    m.select(S + 3, S, "Quelle", einSelStr(), luaGetSelSource, luaSetSelSource)->view = luaShowSource;
+    m.u8(S + 4, S, "Kanal Nr", 1, 16, "", luaGetSelChannel, luaSetSelChannel)->view = luaShowSelChannel;
+    m.u8(S + 5, S, "Volumen", 0, 200, "", luaGetSelVolume, luaSetSelVolume);
+    m.select(S + 6, S, "Wiedergabe Mode", "Normal;Loop;Tippbetrieb", luaGetSelPlayMode, luaSetSelPlayMode);
+    m.select(S + 7, S, "Test Sound", AUS_EIN, luaGetSelTest, luaSetSelTest);
 
-    m.folder(160, 0, "Einstellungen")->view = luaShowSettingsFolder;
-    m.info(161, 160, "RC-System", "")->view = luaShowRcSystem;   // v7.23: nur Anzeige
-    m.u8(162, 160, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
-    m.u8(163, 160, "Einkanal Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 0)->view = luaHideSbusOnly;
-    m.select(164, 160, "Einkanal Mode", WM_MODES, luaGetWmMode, luaSetWmMode, 0)->view = luaHideSbusOnly;
-    m.select(165, 160, "Hardware Config", "V1;V2;V3", luaGetHwConfig, luaSetHwConfig);
-    m.u8(166, 160, "PWM min (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 0)->view = luaViewPwmScale;
-    m.u8(167, 160, "PWM max (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 1)->view = luaViewPwmScale;
-    m.u8(168, 160, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
-    m.u8(169, 160, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
-    m.info(170, 0, "Geraetename", "")->view = luaShowDeviceName;
-    m.select(171, 160, "Port B Rolle", uartRoleOptions(), luaGetPortBRole, luaSetPortBRole);
-    m.select(172, 160, "Port B Baudrate", uartBaudOptions(), luaGetPortBBaud, luaSetPortBBaud)->view = luaViewPortBBaud;
-    m.select(173, 160, "Port C (GPS)", "Aus;An", luaGetPortCGps, luaSetPortCGps);
-    m.select(174, 160, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
-    m.select(175, 160, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
-    m.u8(176, 160, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
-    m.u8(177, 160, "SBUS Gruppe1 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 1)->view = luaHideSbusOnly;
-    m.select(178, 160, "SBUS Gruppe1 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 1)->view = luaHideSbusOnly;
-    m.u8(179, 160, "SBUS Gruppe2 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 2)->view = luaHideSbusOnly;
-    m.select(180, 160, "SBUS Gruppe2 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 2)->view = luaHideSbusOnly;
-    m.select(181, 160, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
+    const uint8_t E = SETTINGS_FI;
+    m.folder(E, 0, "Einstellungen")->view = luaShowSettingsFolder;
+    m.info(E + 1, E, "RC-System", "")->view = luaShowRcSystem;   // v7.23: nur Anzeige
+    m.u8(E + 2, E, "Modul Adresse", 0, 20, "", luaGetModAdr, luaSetModAdr);
+    m.u8(E + 3, E, "Einkanal Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 0)->view = luaHideSbusOnly;
+    m.select(E + 4, E, "Einkanal Mode", WM_MODES, luaGetWmMode, luaSetWmMode, 0)->view = luaHideSbusOnly;
+    m.select(E + 5, E, "Hardware Config", "V1;V2;V3", luaGetHwConfig, luaSetHwConfig);
+    m.u8(E + 6, E, "PWM min (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 0)->view = luaViewPwmScale;
+    m.u8(E + 7, E, "PWM max (/16 us)", 0, 255, "", luaGetPwm, luaSetPwm, 1)->view = luaViewPwmScale;
+    m.u8(E + 8, E, "Gruppenadr. 1 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 0);
+    m.u8(E + 9, E, "Gruppenadr. 2 (255=aus)", 0, 255, "", luaGetGroupAdr, luaSetGroupAdr, 1);
+    m.info(E + 10, 0, "Geraetename", "")->view = luaShowDeviceName;
+    m.select(E + 11, E, "Port B Rolle", uartRoleOptions(), luaGetPortBRole, luaSetPortBRole);
+    m.select(E + 12, E, "Port B Baudrate", uartBaudOptions(), luaGetPortBBaud, luaSetPortBBaud)->view = luaViewPortBBaud;
+    m.select(E + 13, E, "Port C (GPS)", "Aus;An", luaGetPortCGps, luaSetPortCGps);
+    m.select(E + 14, E, "WLAN jetzt", AUS_EIN, luaGetWifiNow, luaSetWifiNow);
+    m.select(E + 15, E, "Auto-WLAN bei Signalverlust", AUS_EIN, luaGetWifiAuto, luaSetWifiAuto);
+    m.u8(E + 16, E, "Auto-WLAN Timeout (s)", 5, 240, "", luaGetWifiTimeout, luaSetWifiTimeout);
+    m.u8(E + 17, E, "SBUS Gruppe1 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 1)->view = luaHideSbusOnly;
+    m.select(E + 18, E, "SBUS Gruppe1 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 1)->view = luaHideSbusOnly;
+    m.u8(E + 19, E, "SBUS Gruppe2 Kanal (255=aus)", 0, 255, "", luaGetBusChannel, luaSetBusChannel, 2)->view = luaHideSbusOnly;
+    m.select(E + 20, E, "SBUS Gruppe2 Modus", WM_MODES, luaGetWmMode, luaSetWmMode, 2)->view = luaHideSbusOnly;
+    m.select(E + 21, E, "WLAN dauerhaft an", AUS_EIN, luaGetWifiAlways, luaSetWifiAlways);
 
     // v7.24: Sound-Zuordnung
     {
@@ -812,6 +911,17 @@ static void buildLuaMenu() {
     // Groesse als Auswahl mit nur einem Eintrag statt Info-Feld: das ELRS-Lua
     // laedt nach einer Aenderung von "Platz" nur Zahlen-/Auswahlfelder neu.
     m.select(SOUNDMAP_FI + 3, SOUNDMAP_FI, "Groesse", "-", luaGetZero, nullptr)->view = luaShowMapSize;
+
+    // v7.25: Funk (ESP-NOW), wie Multiswitch v5.04
+    const uint8_t F = FUNK_FI;
+    m.folder(F, 0, "Funk")->view = luaShowFunkFolder;
+    m.select(F + 1, F, "Betrieb (Neustart)", "Kabel;Kabel + Funk (Zentrale);Funk (Teilnehmer)", luaGetFunkMode, luaSetFunkMode);
+    m.u8(F + 2, F, "Kennung (Neustart)", 1, 255, "", luaGetFunk, luaSetFunk, 0)->view = luaViewFunkSet;
+    m.u8(F + 3, F, "Kanal (Neustart)", 1, 13, "", luaGetFunk, luaSetFunk, 1)->view = luaViewFunkSet;
+    m.select(F + 4, F, "Leistung (Neustart)", FUNK_PWR_OPTIONS, luaGetFunk, luaSetFunk, 2)->view = luaViewFunkSet;
+    m.select(F + 5, F, "Kanaele alle (Neustart)", FUNK_RATE_OPTIONS, luaGetFunk, luaSetFunk, 3)->view = luaViewFunkRate;
+    m.select(F + 6, F, "Rueckkanal (Neustart)", "Aus;An", luaGetFunk, luaSetFunk, 4)->view = luaViewFunkBack;
+    m.info(F + 7, F, "Verbindung", "")->view = luaViewFunkInfo;
 }
 
 void setup() {
@@ -821,12 +931,25 @@ void setup() {
     strncpy(ssid,    config.WiFi_SSID,    sizeof(ssid)-1);    ssid[sizeof(ssid)-1]='\0';
     strncpy(password,config.WiFi_Password,sizeof(password)-1); password[sizeof(password)-1]='\0';
 
-    // CRSF oder SBUS starten
-    if (config.Einkanal_RC_System == 4) {
+    // CRSF oder SBUS starten. v7.25: Funk vor dem WLAN-Start, damit der
+    // Access Point auf dem Funkkanal laeuft (ein Funkteil fuer beides).
+    FunkMode_boot = funkModeFromRc(config.Einkanal_RC_System);
+    if (FunkMode_boot == 2) {
+        // Funk-Teilnehmer: CRSF nur aus dem Funk, Port A (GPIO16/17) bleibt frei
+        funk.begin(FUNK_TEILNEHMER, config.Funk, config.Device_Name, crsfAddrFromWM());
+        crsf.attach_stream(&funk);
+        crsf.setDeviceAddress(crsfAddrFromWM());
+        Serial.printf("CRSF aus Funk (Teilnehmer)  Geraeteadresse 0x%02X\n", crsfAddrFromWM());
+    } else if (rcIsCrsf(config.Einkanal_RC_System)) {
         crsf.init_crsf(&Serial2, 16, 17);
         crsf.setDeviceAddress(crsfAddrFromWM());   // eindeutige CRSF-Adresse aus WM-Adresse
         Serial.printf("CRSF (RX=16, TX=17)  Geraeteadresse 0x%02X  Slot %d\n",
                       crsfAddrFromWM(), (uint8_t)constrain(config.modul_adress,0,15) * 2);
+        if (FunkMode_boot == 1) {
+            // Funk-Zentrale: Funk als Port D des CRSF-Routers
+            if (funk.begin(FUNK_ZENTRALE, config.Funk, config.Device_Name, crsfAddrFromWM()))
+                crsf.attach_funk_stream(&funk);
+        }
     } else {
         sbus_rx.Begin();
         Serial.println("SBUS gestartet");
@@ -844,7 +967,7 @@ void setup() {
     // INPUT_PULLUP für Eingangs-Pins (V1/V2 only, GPIO16/17 bei CRSF überspringen)
     if (config.Hardware_Config < 2) {
         for (uint8_t i = 2; i < 6; i++) {
-            if (config.Einkanal_RC_System == 4 &&
+            if (rcIsCrsf(config.Einkanal_RC_System) &&
                 (Input_Pin[i] == 16 || Input_Pin[i] == 17)) continue;
             pinMode(Input_Pin[i], INPUT_PULLUP);
         }
@@ -868,7 +991,7 @@ void setup() {
     // schaltet den AP unconditional ein und ueberstimmt damit den
     // GPIO13-Bootpin komplett - wer den Pin-Bootmodus weiterhin will, muss
     // die Option zuerst explizit ausschalten (Web-Tab "WiFi" oder CRSF/Lua-
-    // Feld 181).
+    // Feld "WLAN dauerhaft an").
     if (config.WifiAlwaysOn) {
         Serial.println("WLAN dauerhaft aktiv (config.WifiAlwaysOn) - schalte AP ein...");
         WebServerManager::enableAP();
@@ -904,7 +1027,7 @@ void setup() {
     portB.ser  = portBFreeSerial();
     portB.role = PortB_Role_boot;
     portB.baud = PortB_Baud_boot;
-    uartPortsBegin(&portB, 1, crsf, Einkanal_RC_System_boot == 4);
+    uartPortsBegin(&portB, 1, crsf, rcIsCrsf(Einkanal_RC_System_boot));
 
     // Port C (GPS) - unabhaengiger An/Aus-Schalter. Kollidiert mit SBUS als
     // Bus-Protokoll (beide belegen GPIO27), siehe gpsPinConflict.
@@ -912,7 +1035,7 @@ void setup() {
         // Es gibt nur ein GPS - Port B (Hardware-UART) hat Vorrang.
         Serial.println("Port C (GPS) bleibt aus: GPS laeuft bereits auf Port B.");
     } else if (PortC_GPS_Enabled_boot) {
-        if (config.Einkanal_RC_System != 4) {
+        if (!rcIsCrsf(config.Einkanal_RC_System)) {
             gpsPinConflict = true;
             Serial.println("!!! WARNUNG: Port C (GPS) zusammen mit SBUS gewaehlt !!!");
             Serial.println("!!! GPIO27 wird von SBUS UND GPS gleichzeitig belegt -> GPS bleibt deaktiviert !!!");
@@ -969,9 +1092,10 @@ void loop() {
     // Rolle ohne Wirkung)
     uartPortsUpdate();
 
-    if (Einkanal_RC_System_boot == 4) {
+    if (rcIsCrsf(Einkanal_RC_System_boot)) {
+        funk.loop();            // v7.25: vor read_packets() (ohne Funk ohne Wirkung)
         crsf.read_packets(0);
-        crsf.route_packets();   // Modulkette Port A <-> Port B (nur bei Rolle CRSF aktiv)
+        crsf.route_packets();   // Modulkette Port A <-> Port B (Rolle CRSF), v7.25 auch Funk
         for (int i=0;i<16;i++) channel_output[i]=crsf.get_crfs_channels(i);
         // BUS_OK ist daran gekoppelt, ob gerade ein gueltiger CRSF-Frame
         // geparst wurde (validFramesRx-Zaehler erhoeht) - nicht an

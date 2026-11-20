@@ -13,10 +13,11 @@ Projektbeschreibung als Word-Dokument: [`docs/Projektbeschreibung.docx`](docs/Pr
 - **Motorsound** mit Start-/Loop-/Stopp-Zyklus, Gasrampe und einstellbarer Standgas-Verzögerung; die Loop-Tonhöhe folgt dem Gaskanal
 - **24 frei zuweisbare Zusatzsounds** (Hupe, Blinker, Licht, Sirene, Ladeklappe …), je Slot mit eigener Quelle, Lautstärke und Wiedergabemodus (Normal / Loop / Tippbetrieb)
 - **RC-Systeme:** FrSky, FlySky, ELRS (SBUS), Hott, ELRS (CRSF)
+- **Funk (ab v7.25):** Module ohne Kabel per ESP-NOW verbinden, gleich wie Multiswitch und CRSF-Router. RC-System „CRSF + Funk senden (Zentrale)“ am Empfänger oder „CRSF aus Funk (Teilnehmer)“, dann bleibt Port A frei. Web-Tab „Funk“ mit Verbindungsanzeige
 - **Mehrfachadress-Erweiterung („MKan")** — 16 zusätzliche Einzelkanäle über zwei Gruppen, wahlweise per CRSF-Gruppenadresse oder per SBUS-Gruppenkanal
 - **Telemetrie:** S.Port-LiPo-Zellüberwachung (FLVSS/MLVSS, 1–6S automatisch erkannt) und GPS-Geschwindigkeit
 - **Weboberfläche** über eigenen Access Point: Konfiguration, Sound-Upload/-Löschen, Konfigurations-Backup als JSON oder auf SD-Karte
-- **CRSF-/Lua-Parametermenü** — vollständige Bedienung am Sender ohne Handy oder PC (Feld-IDs 1–180)
+- **CRSF-/Lua-Parametermenü** — vollständige Bedienung am Sender ohne Handy oder PC (ab v7.25 ein Ordner „Sounds“ mit Auswahl „Sound Nr“ für alle 24 Sounds, dazu Ordner „Funk“)
 - **OTA-Update** per WLAN, ohne Ausbau des Moduls
 - **WLAN-Failsafe:** schaltet den AP automatisch ein, wenn längere Zeit kein gültiges RC-Signal anliegt
 
@@ -64,7 +65,7 @@ Dateien liegen im Wurzelverzeichnis der Karte. **Seit v7.24 behalten Sounds ihre
 
 - **Web-UI, Tab „Speicher“:** alle WAV-Dateien der Karte mit Größe und Platz, pro Platz eine Auswahlliste. Ein Sound darf auf mehreren Plätzen liegen. Dort auch Hochladen (mehrere auf einmal) und Löschen.
 - **Web-UI, Tabs „Motor“ und „Sounds“:** „Hochladen“ speichert die Datei mit ihrem Namen und legt sie gleich auf diesen Platz.
-- **Lua-Menü, Ordner „Sound-Zuordnung“** (Felder 182–185): erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien.
+- **Lua-Menü, Ordner „Sound-Zuordnung“:** erst „Platz“ wählen, dann bei „Datei“ den Sound. Namen sind dort auf 12 Zeichen gekürzt, die Liste zeigt bis zu 20 Dateien.
 
 Beim Hochladen werden Umlaute ersetzt (ä → ae), Leerzeichen werden zu `_`, Namen bis 40 Zeichen plus `.wav`. Per Kartenleser kopierte Dateien erscheinen im Tab „Speicher“ und müssen dort einem Platz zugeordnet werden. Ausnahme: Ohne eigene Zuordnung gelten wie bisher die festen Namen:
 
@@ -145,7 +146,7 @@ Bibliotheksversionen sind in `platformio.ini` fest gepinnt. Die Partitionstabell
 Drei Wege zum Access Point:
 
 1. **GPIO 13 beim Einschalten kurz auf GND** — funktioniert immer, auch ganz ohne Sender
-2. **Schalter im Web-Tab „WiFi"** bzw. CRSF-/Lua-Feld 174 — wirkt sofort, ohne Neustart
+2. **Schalter im Web-Tab „WiFi"** bzw. Lua „WLAN jetzt“ — wirkt sofort, ohne Neustart
 3. **Auto-Failsafe** — schaltet selbsttätig ein, wenn 5–240 s (Standard 60 s) kein gültiges RC-Signal anliegt
 
 Der Failsafe schaltet **nur ein, nie automatisch wieder aus**. Das ist Absicht: sonst bräche eine laufende Konfiguration oder ein laufendes OTA-Update ab, sobald kurz wieder ein Signal hereinkommt.
@@ -153,6 +154,16 @@ Der Failsafe schaltet **nur ein, nie automatisch wieder aus**. Das ist Absicht: 
 ### Am Sender
 
 Bei RC-System ELRS (CRSF) ist das Modul vollständig über das native Parametermenü des Senders bedienbar, etwa als Lua-Script in EdgeTX. Jedes Modul bezieht seine CRSF-Busadresse (`0xC0` + WM-Adresse) und seinen Telemetrie-Zeitslot aus der WM-Adresse nach dem Wilhelm-Meier-Schema — mehrere Module am selben Bus stören sich dadurch nicht.
+
+Ab v7.25 gibt es für die Zusatzsounds nur noch **einen Ordner „Sounds“**: oben „Sound Nr“ wählen (1–24), darunter erscheinen Name (zugeordnete Datei), Quelle, Kanal Nr, Volumen, Wiedergabe Mode und Test Sound dieses Sounds. Das ist in allen Soundmodulen gleich.
+
+### Funk (ab v7.25)
+
+- **Zentrale:** RC-System „CRSF + Funk senden (Zentrale)“. Das Modul hängt am Empfänger (Port A) und funkt die Kanäle an die Teilnehmer weiter. Pro Fahrzeug genau eine Zentrale.
+- **Teilnehmer:** RC-System „CRSF aus Funk (Teilnehmer)“. Kanäle kommen nur aus dem Funk, Port A bleibt frei.
+- Kennung (Fahrzeug) und Funkkanal müssen bei allen Modulen eines Fahrzeugs gleich sein. Einstellbar in der Web-UI (Einstellungen, Karte „Funk“) oder im Lua-Ordner „Funk“, wirkt nach einem Neustart.
+- Bei Funkverlust schaltet der Teilnehmer nach 2 s auf Failsafe (Motor und Sounds aus).
+- Der Access Point läuft mit Funk auf dem Funkkanal. WLAN bleibt technisch an (ESP-NOW braucht es), das kostet etwas RAM: nach dem ersten Test bitte „RAM frei“ in der Web-UI ansehen.
 
 ---
 

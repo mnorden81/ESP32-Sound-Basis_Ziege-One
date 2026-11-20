@@ -41,6 +41,7 @@
 // Port A und Port B) und kann daher nur GPS (Baudrate automatisch bis
 // 38400) oder Aus.
 #include "src/RC_Common/uart_roles.h"
+#include "src/RC_Common/funk_link.h"   // v7.25: Funk (ESP-NOW)
 
 // "Mehrfachadress-Erweiterung": statt einer einzelnen Adresse mit
 // 2-Bit/Schalter-"Ebenen" werden bis zu RCSOUND_NUM_GROUPS unabhaengige
@@ -91,7 +92,8 @@ struct ConfigData {
 
     int Einkanal_Channel;        // BUS-Kanal für Einkanal (999=deaktiviert)
     int Einkanal_mode;           // 0=Normal, 10-13=WM-Adresse 0-3
-    int Einkanal_RC_System;      // 0=FrSky,1=FlySky,2=ELRS SBUS,3=Hott,4=ELRS CRSF
+    int Einkanal_RC_System;      // 0=FrSky,1=FlySky,2=ELRS SBUS,3=Hott,4=ELRS CRSF,
+                                 // 5=CRSF + Funk senden (Zentrale), 6=CRSF aus Funk (Teilnehmer), v7.25
     int modul_adress;            // Modul-Adresse (WM/CRSF) - eigene CRSF-Busadresse des Moduls
 
     // Die CRSF-Gruppenadressen fuer die Einzelkanaele (Quelltyp "MKan",
@@ -156,7 +158,7 @@ struct ConfigData {
     // Sender gebunden ist oder der Empfaenger fehlt, damit das Modul trotzdem
     // per WLAN erreichbar bleibt. Default AUS (opt-in). Getrennt davon
     // (NICHT in dieser Struktur, da bewusst nicht persistiert): der manuelle
-    // "WLAN jetzt ein/aus"-Schalter (Web-Tab "WiFi"/Lua-Feld 174) bildet nur
+    // "WLAN jetzt ein/aus"-Schalter (Web-Tab "WiFi"/Lua "WLAN jetzt") bildet nur
     // den aktuellen Laufzeit-Zustand ab, siehe WebServerManager::
     // enableAP()/disableAP().
     bool     WifiAutoEnable;
@@ -164,8 +166,8 @@ struct ConfigData {
 
     // WLAN dauerhaft aktiv: der AP wird in setup() fest eingeschaltet und
     // danach von der Firmware nie mehr ausgeschaltet - GPIO13-Bootpin (siehe
-    // setup()), der manuelle Schalter (CRSF/Lua-Feld 174) und der
-    // Auto-Failsafe oben (WifiAutoEnable/WifiAutoTimeoutSec, Felder 175/176)
+    // setup()), der manuelle Schalter (CRSF/Lua "WLAN jetzt") und der
+    // Auto-Failsafe oben (WifiAutoEnable/WifiAutoTimeoutSec, Lua "Auto-WLAN")
     // werden dabei uebersprungen, siehe wifiFailsafeCheck() in
     // ESP32-RC-Sound.ino. Default AN (true) - bewusst auch fuer
     // Bestandsgeraete beim ersten Boot nach einem Firmware-Update, siehe
@@ -175,6 +177,10 @@ struct ConfigData {
     // v7.24: Dateiname je Platz (ohne "/"), siehe SND_FILE_SLOTS oben.
     // Werkseinstellung: loop.wav, shut.wav, start.wav, sound1.wav ...
     char Sound_File[SND_FILE_SLOTS][SND_FILE_LEN];
+
+    // v7.25: Funk-Einstellungen (NVS fkid/fkch/fkpwr/fkrate/fkback, RC_Common).
+    // Ob Funk an ist, steht im RC-System (5 = Zentrale, 6 = Teilnehmer).
+    FunkConfig Funk;
 };
 
 extern ConfigData    config;
@@ -199,6 +205,19 @@ uint32_t nextSdBackupCounter();
 // Hardware_Config abweicht - der neue Wert wirkt erst nach einem Neustart.
 static inline bool hardwareConfigRestartPending() {
     return config.Hardware_Config_Pending != config.Hardware_Config;
+}
+
+
+// v7.25: RC-System 4-6 sind CRSF (5/6 zusaetzlich mit Funk), wie Multiswitch v5.04
+static inline bool rcIsCrsf(int rc) { return rc >= 4 && rc <= 6; }
+// Funk-Betrieb aus dem RC-System: 0 = Kabel, 1 = Zentrale, 2 = Teilnehmer
+static inline uint8_t funkModeFromRc(int rc) { return rc == 5 ? 1 : rc == 6 ? 2 : 0; }
+// Neues RC-System, wenn der Funk-Betrieb umgestellt wird. Funk gibt es nur
+// mit CRSF; "Kabel" laesst ein SBUS-System unveraendert.
+static inline int rcFromFunkMode(int rc, uint8_t mode) {
+    if (mode == 1) return 5;
+    if (mode == 2) return 6;
+    return rcIsCrsf(rc) ? 4 : rc;
 }
 
 #endif

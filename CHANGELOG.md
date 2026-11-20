@@ -2,6 +2,11 @@
 
 Dieses Repository enthält nur die V7-Linie. Ältere Stände (V5, V6) sind getrennte Projekte und liegen nicht hier. Die Version wird bei jeder Änderung erhöht, weil sie als CRSF „Parameter Version Number“ an den Sender geht. Neueste Version oben, aufgeführt sind die wichtigen Schritte.
 
+## v7.25 (RC_Common 1.5.2)
+- Neu: Funk (ESP-NOW) wie Multiswitch v5.04 und CRSF-Router. RC-System 5 = „CRSF + Funk senden (Zentrale)“, 6 = „CRSF aus Funk (Teilnehmer)“, Port A bleibt dann frei. Web-UI: Karte „Funk“ in den Einstellungen und Tab „Funk“ mit Verbindungsanzeige. Lua: Ordner „Funk“.
+- Lua: statt 24 Ordnern „Sound 1“ … „Sound 24“ ein Ordner „Sounds“ mit Auswahl „Sound Nr“ (gleich in allen Soundmodulen). Feld-IDs neu durchnummeriert, 57 statt 185 Felder.
+- Noch nicht auf Hardware getestet. Flash 97,1 % (default.csv).
+
 ## v7.24
 - Sound-Zuordnung: Sounds behalten beim Hochladen ihren Namen (`sound_map.h`). Neuer Web-Tab „Speicher“ mit allen Sounds der SD-Karte, Auswahlliste je Platz, Hochladen und Löschen. Neuer Lua-Ordner „Sound-Zuordnung“ (Felder 182–185).
 - Vorhandene `loop.wav` … `sound24.wav` bleiben auf ihren Plätzen, die Zuordnung steht im Export/Backup.
