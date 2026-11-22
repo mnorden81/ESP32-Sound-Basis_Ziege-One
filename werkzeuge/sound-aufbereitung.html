@@ -1,0 +1,713 @@
+<title>Sound-Aufbereitung Mini S3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Werkbank – oben Eingang + Einstellungen nebeneinander, darunter je Datei eine Pruefkarte, unten Speicherbalken und Zielformat */
+:root{
+  --bg:#eef0f4; --surface:#ffffff; --ink:#16171c; --sub:#596072; --line:#d9dce5;
+  --accent:#5a3ea6; --accent-ink:#ffffff; --accent-soft:#ece7fa;
+  --ok:#1d7a4b; --ok-soft:#e2f3ea; --warn:#9a5a00; --warn-soft:#fbefdc; --err:#b3261e; --err-soft:#fbe4e2;
+  --wave-a:#9aa1b3; --wave-b:#5a3ea6; --grid:#e6e8ee;
+  --f-display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111216; --surface:#1a1c22; --ink:#e8e9ee; --sub:#9aa0b2; --line:#2c2f39;
+  --accent:#a68cf2; --accent-ink:#15121f; --accent-soft:#2a2440;
+  --ok:#4cc38a; --ok-soft:#173327; --warn:#f0a640; --warn-soft:#3a2a12; --err:#ff7f73; --err-soft:#3d1c1a;
+  --wave-a:#5d6375; --wave-b:#a68cf2; --grid:#24262e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111216; --surface:#1a1c22; --ink:#e8e9ee; --sub:#9aa0b2; --line:#2c2f39;
+  --accent:#a68cf2; --accent-ink:#15121f; --accent-soft:#2a2440;
+  --ok:#4cc38a; --ok-soft:#173327; --warn:#f0a640; --warn-soft:#3a2a12; --err:#ff7f73; --err-soft:#3d1c1a;
+  --wave-a:#5d6375; --wave-b:#a68cf2; --grid:#24262e; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1080px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:22px}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--sub)}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(28px,5vw,40px);line-height:1.05;margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:600;font-size:20px;margin:0}
+h3{font-family:var(--f-display);font-weight:600;font-size:16px;margin:0;letter-spacing:.01em}
+.lead{color:var(--sub);max-width:66ch;margin:0}
+.spec{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.spec span{font-family:var(--f-mono);font-size:12.5px;padding:3px 8px;border-radius:6px;background:var(--accent-soft);color:var(--ink)}
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px}
+@media (max-width:760px){.top{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.drop{border:2px dashed var(--line);border-radius:var(--r);background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:28px 18px;cursor:pointer;transition:border-color .15s,background .15s;min-height:220px}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.drop svg{width:44px;height:44px;color:var(--accent)}
+.drop strong{font-family:var(--f-display);font-size:19px;font-weight:600}
+.drop small{color:var(--sub)}
+.drop input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.settings{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px 16px}
+@media (max-width:460px){.settings{grid-template-columns:minmax(0,1fr)}}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field.wide{grid-column:1/-1}
+.field label,.lbl{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--sub)}
+select{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px 9px;min-width:0;width:100%}
+select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.checks{display:flex;flex-direction:column;gap:8px;grid-column:1/-1}
+.check{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.check input{margin-top:4px;accent-color:var(--accent);width:16px;height:16px;flex:none}
+.check span b{font-weight:600}
+.check span small{display:block;color:var(--sub);font-size:13px}
+.btn{font:inherit;font-weight:600;font-size:14px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--sub);padding:5px 8px}
+.btn:disabled{opacity:.5;cursor:default}
+.list{display:flex;flex-direction:column;gap:14px}
+.list-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.card-head{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.card-title{display:flex;gap:8px;align-items:center;min-width:0;flex-wrap:wrap}
+.fname{font-family:var(--f-mono);font-size:14px;font-weight:500;overflow-wrap:anywhere}
+.tag{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--accent-soft);color:var(--accent)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:700px){.cols{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;font-size:13.5px;margin:0}
+.facts dt{color:var(--sub)}
+.facts dd{margin:0;font-family:var(--f-mono);font-size:13px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.notes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.notes li{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;line-height:1.4;padding:5px 8px;border-radius:6px}
+.notes li i{font-style:normal;font-weight:700;font-size:11px;letter-spacing:.04em;padding:1px 6px;border-radius:4px;flex:none;margin-top:1px}
+.n-ok{background:var(--ok-soft)} .n-ok i{background:var(--ok);color:var(--surface)}
+.n-warn{background:var(--warn-soft)} .n-warn i{background:var(--warn);color:var(--surface)}
+.n-err{background:var(--err-soft)} .n-err i{background:var(--err);color:var(--surface)}
+.waves{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.wave{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:center}
+.wave span{font-size:12px;color:var(--sub);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.wave canvas{width:100%;height:54px;display:block;background:var(--bg);border-radius:6px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.actions .grow{flex:1 1 auto}
+.target{display:flex;gap:8px;align-items:center}
+.target select{width:auto}
+.err-box{color:var(--err);font-size:14px}
+.bottom{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.bottom{grid-template-columns:minmax(0,1fr)}}
+.meter{height:14px;border-radius:7px;background:var(--bg);border:1px solid var(--line);overflow:hidden;display:flex}
+.meter div{height:100%;background:var(--accent)}
+.meter div:nth-child(even){background:color-mix(in srgb,var(--accent) 60%,var(--surface))}
+.meter-legend{display:flex;justify-content:space-between;font-family:var(--f-mono);font-size:12.5px;color:var(--sub);font-variant-numeric:tabular-nums;gap:10px;flex-wrap:wrap}
+.slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.slot{font-family:var(--f-mono);font-size:12.5px;padding:6px 8px;border-radius:6px;background:var(--bg);display:flex;justify-content:space-between;gap:8px}
+.slot.used{background:var(--accent-soft)}
+.slot.dup{background:var(--err-soft);color:var(--err)}
+.hints{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.hints code,.lead code{font-family:var(--f-mono);font-size:12.5px;background:var(--bg);padding:1px 4px;border-radius:4px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:14px;max-width:calc(100% - 32px);z-index:20}
+.viewer-note{font-size:13px;color:var(--sub)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Sound Mini S3 · Sound-Basis · Multiswitch-Sound S3</div>
+    <h1>Sound-Aufbereitung</h1>
+    <p class="lead">Audiodateien hier hineinziehen. Die Seite prüft, ob das Modul sie so abspielen kann, und wandelt sie passend um: klar verständlich für den MAX98357A mit kleinem Lautsprecher (Sound Mini) oder in voller Qualität für den PCM5102A (Sound-Basis, Multiswitch-Sound). Alles läuft im Browser, nichts wird hochgeladen.</p>
+    <div class="spec" aria-label="Zielformat"><span>WAV</span><span>PCM 16 Bit</span><span>Mono</span><span id="spec-rate">22 050 Hz</span><span>Modul gibt intern mit 44 100 Hz aus</span></div>
+  </header>
+
+  <section class="top">
+    <label class="drop" id="drop">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 24h4M13 16v16M20 10v28M27 18v12M34 13v22M41 21v6"/></svg>
+      <strong>Audiodateien hierher ziehen</strong>
+      <small>oder klicken zum Auswählen · WAV, MP3, M4A, OGG, FLAC</small>
+      <input type="file" id="file-in" multiple accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aac,.opus">
+    </label>
+
+    <div class="panel">
+      <h2>Einstellungen</h2>
+      <div class="settings">
+        <div class="field wide">
+          <label for="set-mod">Modul</label>
+          <select id="set-mod">
+            <option value="mini" selected>Sound Mini S3 · MAX98357A · Flash 1,38 MB</option>
+            <option value="pcm">Sound-Basis / Multiswitch-Sound S3 · SD-Karte · PCM5102A (Hi-Fi)</option>
+          </select>
+          <small id="mod-note" style="color:var(--sub);font-size:13px"></small>
+        </div>
+        <div class="field">
+          <label for="set-rate">Abtastrate</label>
+          <select id="set-rate">
+            <option value="22050" selected>22 050 Hz (Mini: empfohlen)</option>
+            <option value="44100">44 100 Hz (beste Qualität, läuft 1:1 durch)</option>
+            <option value="11025">11 025 Hz (sparsam, dumpfer)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="set-hp">Lautsprecher</label>
+          <select id="set-hp">
+            <option value="250">Klein, bis 28 mm (Bässe ab 250 Hz weg)</option>
+            <option value="150" selected>Mittel, 28 bis 40 mm (ab 150 Hz)</option>
+            <option value="80">Groß, ab 40 mm (ab 80 Hz)</option>
+            <option value="40">Box / Gehäuselautsprecher (ab 40 Hz)</option>
+            <option value="0">Bässe nicht filtern</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="set-peak">Lautstärke-Reserve</label>
+          <select id="set-peak">
+            <option value="-1" selected>Volumen im Modul bis 100 %</option>
+            <option value="-4.5">Volumen im Modul bis 130 %</option>
+            <option value="-7.5">Volumen im Modul bis 150 %</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="set-rpm">Motor-Drehzahl (nur loop.wav)</label>
+          <select id="set-rpm">
+            <option value="200">bis 200 %</option>
+            <option value="300" selected>bis 300 % (Vorgabe im Modul)</option>
+            <option value="400">bis 400 %</option>
+            <option value="600">bis 600 %</option>
+          </select>
+        </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="set-presence" checked><span><b>Sprache klarer</b><small>Hebt den Bereich um 2,5 kHz leicht an. Für Ansagen und Sprüche, bei Motorgeräuschen eher aus.</small></span></label>
+          <label class="check"><input type="checkbox" id="set-comp" checked><span><b>Leise Stellen anheben</b><small>Gleicht laut und leise an, damit der Sound auch bei Fahrgeräusch zu hören ist.</small></span></label>
+          <label class="check"><input type="checkbox" id="set-trim" checked><span><b>Stille am Anfang und Ende wegschneiden</b><small>Spart Speicher und der Sound kommt sofort. Bei loop.wav wird nie geschnitten.</small></span></label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="list" aria-live="polite">
+    <div class="list-head">
+      <h2 id="list-title">Dateien</h2>
+      <div class="actions">
+        <button class="btn" id="btn-test">Testsounds einfügen</button>
+        <button class="btn" id="btn-clear">Liste leeren</button>
+        <button class="btn primary" id="btn-all">Alle herunterladen (ZIP)</button>
+      </div>
+    </div>
+    <div id="viewer-note" class="viewer-note" hidden>Hier in claude.ai kommen die WAV-Dateien als ZIP. Die ZIP-Datei mit Doppelklick öffnen und die WAV herausziehen. Die Seite als lokale Datei geöffnet speichert direkt WAV.</div>
+    <div id="cards" class="list"></div>
+  </section>
+
+  <section class="bottom">
+    <div class="panel">
+      <h2 id="store-title">Sound-Speicher im Modul</h2>
+      <div class="meter" id="meter" role="img" aria-label="Speicherbelegung"></div>
+      <div class="meter-legend"><span id="meter-used">0 KB belegt</span><span id="meter-free">1 380 KB frei</span></div>
+      <div class="slots" id="slots"></div>
+    </div>
+    <div class="panel">
+      <h2>So kommen die Sounds ins Modul</h2>
+      <ol class="hints">
+        <li>Die Dateien behalten ihren Namen. Umlaute und Leerzeichen werden ersetzt, genau wie im Modul.</li>
+        <li>Mit dem Modul-WLAN verbinden und die Weboberfläche öffnen.</li>
+        <li>Im Tab „Speicher“ hochladen und dort per Auswahl dem Platz zuweisen (am Sender geht das auch im Lua-Menü): Loop, Standgas, Start oder Sound 1 bis 4 (Mini) bzw. 1 bis 24.</li>
+        <li>Volumen im Modul nicht höher stellen als bei „Lautstärke-Reserve“ gewählt. Darüber greift ab Firmware Mini v0.15, Sound-Basis v7.26 und Multiswitch-Sound v1.12 der Begrenzer ein (leiser statt Knacken), ältere Firmware verzerrt.</li>
+      </ol>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+'use strict';
+// ---------- Grundwerte aus der Firmware (Mini v0.15, Sound-Basis v7.26, Multiswitch-Sound v1.12) ----------
+const BLOCK = 4096;              // LittleFS-Blockgroesse
+const OUT_RATE = 44100;          // I2S-Ausgaberate der Firmware (SAMPLES_PER_SEC)
+// Profil je Modul: Vorgaben fuer die Einstellungen, Zahl der Sound-Plaetze, Speicher
+const MODULES = {
+  mini: { sounds:4, maxLen:26, budget:1380*1024, note:'Flash-Speicher ist knapp: 22 050 Hz Mono, Bässe weg und Sprache angehoben, damit es über den kleinen Lautsprecher klar klingt.',
+          preset:{ rate:22050, hp:150, peak:-1, presence:true, comp:true, trim:true } },
+  pcm:  { sounds:24, maxLen:40, budget:0, note:'SD-Karte, Platz spielt keine Rolle: 44 100 Hz Mono läuft 1:1 ohne Umrechnung durch (die Platine nutzt einen Kanal). Klang bleibt unverändert, nur Bässe unter 40 Hz und Gleichanteil werden entfernt.',
+          preset:{ rate:44100, hp:40, peak:-1, presence:false, comp:false, trim:true } }
+};
+let MOD = MODULES.mini;
+function setModule(key, applyPreset){
+  MOD = MODULES[key];
+  $('mod-note').textContent = MOD.note;
+  $('store-title').textContent = MOD.budget ? 'Sound-Speicher im Modul (Flash)' : 'Dateien für die SD-Karte';
+  if (applyPreset){ const p=MOD.preset; $('set-rate').value=p.rate; $('set-hp').value=p.hp; $('set-peak').value=p.peak;
+    $('set-presence').checked=p.presence; $('set-comp').checked=p.comp; $('set-trim').checked=p.trim; }
+}
+
+// Link mit #pcm (Sound-Basis, Multiswitch-Sound) bzw. #mini waehlt das Modul vor
+if (location.hash==='#pcm'){ $('set-mod').value='pcm'; setModule('pcm', true); } else setModule('mini', false);
+const S = { items: [], nextId: 1, settings: readSettings(), playing: null };
+let actx = null;
+function ctx(){ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); return actx; }
+
+// ---------- Hilfen ----------
+function $(id){ return document.getElementById(id); }
+const dB = v => v > 0 ? 20*Math.log10(v) : -Infinity;
+const fmtDb = v => isFinite(v) ? (v>=0?'+':'') + v.toFixed(1).replace('.',',') + ' dB' : '–∞ dB';
+const fmtKB = b => (b/1024).toFixed(b < 10240 ? 1 : 0).replace('.',',') + ' KB';
+const fmtS = s => s.toFixed(2).replace('.',',') + ' s';
+const fmtHz = r => String(r).replace(/\B(?=(\d{3})+(?!\d))/g,'\u2009') + ' Hz';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true,3200); }
+function readSettings(){
+  return { rate:+$('set-rate').value, hp:+$('set-hp').value, peak:+$('set-peak').value, rpm:+$('set-rpm').value, mod:$('set-mod').value,
+           presence:$('set-presence').checked, comp:$('set-comp').checked, trim:$('set-trim').checked };
+}
+
+// ---------- WAV-Kopf des Originals lesen (nur zur Pruefung) ----------
+function sniff(buf, name){
+  const u = new Uint8Array(buf), dv = new DataView(buf);
+  const str = (o,n) => String.fromCharCode(...u.subarray(o,o+n));
+  const info = { container:'?', bytes: buf.byteLength };
+  if (u.length >= 12 && str(0,4)==='RIFF' && str(8,4)==='WAVE'){
+    info.container = 'WAV';
+    let p = 12;
+    while (p + 8 <= u.length){
+      const id = str(p,4), sz = dv.getUint32(p+4,true);
+      if (id === 'fmt ' && p+24 <= u.length){
+        info.fmt = dv.getUint16(p+8,true); info.channels = dv.getUint16(p+10,true);
+        info.rate = dv.getUint32(p+12,true); info.bits = dv.getUint16(p+22,true);
+        if (info.fmt === 0xFFFE && sz >= 40) info.sub = dv.getUint16(p+32,true);
+      }
+      if (id === 'data') { info.dataBytes = Math.min(sz, u.length-p-8); break; }
+      p += 8 + sz + (sz & 1);
+    }
+  } else if (str(0,3)==='ID3' || (u[0]===0xFF && (u[1]&0xE0)===0xE0)) info.container='MP3';
+  else if (str(0,4)==='OggS') info.container='OGG';
+  else if (str(0,4)==='fLaC') info.container='FLAC';
+  else if (str(4,4)==='ftyp') info.container='M4A';
+  else { const m=/\.([a-z0-9]+)$/i.exec(name); if(m) info.container=m[1].toUpperCase(); }
+  return info;
+}
+function fmtName(info){
+  if (info.container !== 'WAV') return info.container;
+  const f = info.fmt===1 ? 'PCM' : info.fmt===3 ? 'Gleitkomma' : info.fmt===0xFFFE ? 'Extensible' : 'Format '+info.fmt;
+  return 'WAV ' + f + (info.bits ? ' ' + info.bits + ' Bit' : '');
+}
+
+// ---------- Analyse ----------
+function analyse(ch, rate){
+  const n = ch[0].length; let peak=0, sum=0, dc=0, clip=0;
+  for (let c=0;c<ch.length;c++){ const x=ch[c]; let run=0;
+    for (let i=0;i<n;i++){ const a=Math.abs(x[i]); if(a>peak)peak=a; sum+=x[i]*x[i]; dc+=x[i];
+      if (a>=0.995){ run++; if(run===3) clip++; } else run=0; } }
+  const tot = n*ch.length;
+  // Stille am Anfang/Ende (40 dB unter Spitze)
+  const thr = peak*0.01; let a=0, b=n-1;
+  const loud = i => { for(const x of ch) if(Math.abs(x[i])>thr) return true; return false; };
+  while (a<n && !loud(a)) a++; while (b>a && !loud(b)) b--;
+  return { dur:n/rate, peak:dB(peak), rms:dB(Math.sqrt(sum/Math.max(1,tot))), dc:dc/Math.max(1,tot), clip,
+           leadMs:a/rate*1000, tailMs:(n-1-b)/rate*1000 };
+}
+
+// ---------- DSP ----------
+function biquad(x, fs, type, f0, q, gainDb){
+  if (f0 <= 0 || f0 >= fs/2) return x;
+  const w=2*Math.PI*f0/fs, cs=Math.cos(w), sn=Math.sin(w), al=sn/(2*q);
+  let b0,b1,b2,a0,a1,a2;
+  if (type==='hp'){ b0=(1+cs)/2; b1=-(1+cs); b2=(1+cs)/2; a0=1+al; a1=-2*cs; a2=1-al; }
+  else if (type==='lp'){ b0=(1-cs)/2; b1=1-cs; b2=(1-cs)/2; a0=1+al; a1=-2*cs; a2=1-al; }
+  else { const A=Math.pow(10,gainDb/40); b0=1+al*A; b1=-2*cs; b2=1-al*A; a0=1+al/A; a1=-2*cs; a2=1-al/A; }
+  b0/=a0; b1/=a0; b2/=a0; a1/=a0; a2/=a0;
+  const y=new Float32Array(x.length); let x1=0,x2=0,y1=0,y2=0;
+  for (let i=0;i<x.length;i++){ const v=x[i], o=b0*v+b1*x1+b2*x2-a1*y1-a2*y2; x2=x1; x1=v; y2=y1; y1=o; y[i]=o; }
+  return y;
+}
+function peakOf(x){ let p=0; for(let i=0;i<x.length;i++){ const a=Math.abs(x[i]); if(a>p)p=a; } return p; }
+function gain(x,g){ for(let i=0;i<x.length;i++) x[i]*=g; return x; }
+function compress(x, fs){
+  // Peak-normiert, dann 3:1 ab -18 dBFS, Attack 3 ms, Release 120 ms
+  const p=peakOf(x); if(p<1e-6) return x; gain(x,1/p);
+  const at=Math.exp(-1/(0.003*fs)), rl=Math.exp(-1/(0.12*fs)), thr=-18, ratio=3;
+  let env=0;
+  for (let i=0;i<x.length;i++){
+    const a=Math.abs(x[i]); env = a>env ? at*env+(1-at)*a : rl*env+(1-rl)*a;
+    const lv=20*Math.log10(env+1e-9), over=lv-thr;
+    if (over>0) x[i]*=Math.pow(10, -over*(1-1/ratio)/20);
+  }
+  return x;
+}
+// Gefensterter Sinc-Resampler mit Tiefpass gegen Aliasing
+function resample(x, fin, fout){
+  if (fin===fout) return Float32Array.from(x);
+  const r=fout/fin, fc=Math.min(1,r)*0.9, H=Math.ceil(10/fc), P=512;
+  const tab=new Float32Array(H*P+2);
+  for (let j=0;j<tab.length;j++){ const d=j/P, u=d/H; if(u>1){tab[j]=0;continue;}
+    const s = d===0 ? 1 : Math.sin(Math.PI*fc*d)/(Math.PI*fc*d);
+    tab[j]=fc*s*(0.42+0.5*Math.cos(Math.PI*u)+0.08*Math.cos(2*Math.PI*u)); }
+  const n=Math.floor(x.length*r), y=new Float32Array(n), L=x.length;
+  for (let i=0;i<n;i++){
+    const t=i/r, k0=Math.floor(t); let s=0;
+    const ks=Math.max(0,k0-H+1), ke=Math.min(L-1,k0+H);
+    for (let k=ks;k<=ke;k++){ const d=Math.abs(t-k)*P, j=d|0, f=d-j; s+=x[k]*(tab[j]+(tab[j+1]-tab[j])*f); }
+    y[i]=s;
+  }
+  return y;
+}
+function processItem(it, st){
+  const fs = it.rate, n = it.ch[0].length;
+  // 1. Mono
+  let x = new Float32Array(n);
+  for (const c of it.ch) for (let i=0;i<n;i++) x[i]+=c[i]/it.ch.length;
+  // 2. Bass weg (2 x 2. Ordnung = 24 dB/Oktave), entfernt auch Gleichanteil
+  if (st.hp>0){ x=biquad(x,fs,'hp',st.hp,0.7071); x=biquad(x,fs,'hp',st.hp,0.7071); }
+  else x=biquad(x,fs,'hp',15,0.7071);
+  // 2b. Motor-Schleife: das Modul spielt sie bis zur max. Drehzahl schneller ab. Was dann ueber
+  // 20 kHz laege, wuerde in den hoerbaren Bereich zurueckgespiegelt (rau) - vorher wegfiltern.
+  if (it.use==='loop' && st.rpm>100){ const fc=20000/(st.rpm/100); x=biquad(x,fs,'lp',fc,0.7071); x=biquad(x,fs,'lp',fc,0.7071); }
+  // 3. Praesenz
+  if (st.presence) x=biquad(x,fs,'peak',2500,1.0,4);
+  // 4. Dynamik
+  if (st.comp) x=compress(x,fs);
+  // 5. Abtastrate
+  let y = resample(x, fs, st.rate);
+  const R = st.rate, isLoop = it.use==='loop';
+  // 6. Stille schneiden
+  if (st.trim && !isLoop){
+    const p=peakOf(y), thr=p*0.01; let a=0,b=y.length-1;
+    while(a<y.length && Math.abs(y[a])<=thr) a++; while(b>a && Math.abs(y[b])<=thr) b--;
+    a=Math.max(0,a-Math.round(0.015*R)); b=Math.min(y.length-1,b+Math.round(0.06*R));
+    if (b>a) y=y.slice(a,b+1);
+  }
+  // 7. Uebergaenge
+  if (isLoop){
+    const N=Math.min(Math.round(0.06*R), Math.floor(y.length/4));
+    if (N>8){ const L=y.length, o=new Float32Array(L-N);
+      for(let m=0;m<L-2*N;m++) o[m]=y[N+m];
+      for(let j=0;j<N;j++){ const a=0.5-0.5*Math.cos(Math.PI*(j+0.5)/N); o[L-2*N+j]=y[L-N+j]*(1-a)+y[j]*a; }
+      y=o; }
+  } else {
+    const fi=Math.min(Math.round(0.008*R),y.length>>2), fo=Math.min(Math.round(0.025*R),y.length>>2);
+    for(let i=0;i<fi;i++) y[i]*=i/fi;
+    for(let i=0;i<fo;i++) y[y.length-1-i]*=i/fo;
+  }
+  // 8. Pegel
+  const p=peakOf(y); if (p>1e-6) gain(y, Math.min(Math.pow(10,st.peak/20)/p, 100));
+  // 9. 16 Bit mit Dither
+  const pcm=new Int16Array(y.length);
+  for (let i=0;i<y.length;i++){ let v=Math.round(y[i]*32767+(Math.random()-Math.random())); pcm[i]=v>32767?32767:v<-32768?-32768:v; }
+  const f=new Float32Array(pcm.length); for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/32768;
+  return { pcm, rate:R, float:f, wav:makeWav(pcm,R), an:analyse([f],R) };
+}
+function makeWav(pcm, rate){
+  const b=new ArrayBuffer(44+pcm.length*2), v=new DataView(b), w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  w(0,'RIFF'); v.setUint32(4,36+pcm.length*2,true); w(8,'WAVE'); w(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,rate,true);
+  v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,pcm.length*2,true);
+  new Int16Array(b,44).set(pcm);
+  return new Uint8Array(b);
+}
+const fsSize = bytes => Math.ceil(bytes/BLOCK)*BLOCK;
+
+// ---------- Pruefhinweise ----------
+function originalNotes(it){
+  const i=it.info, a=it.an, N=[];
+  if (i.container!=='WAV') N.push(['err','FEHLT',`${i.container}-Datei: Das Modul spielt nur WAV ab.`]);
+  else {
+    if (i.fmt===1 && i.bits===16) N.push(['ok','OK','16-Bit-PCM, das Modul kann das Format lesen.']);
+    else if (i.fmt===1 && i.bits===8) N.push(['warn','HINWEIS','8 Bit: rauscht hörbar. Ältere Firmware (vor Mini v0.15 / Sound-Basis v7.26 / Multiswitch-Sound v1.12) spielt nur Rauschen.']);
+    else if (i.fmt===3) N.push(['err','FEHLER','Gleitkomma-WAV: Das Modul lehnt die Datei ab.']);
+    else if (i.fmt===0xFFFE) N.push(['err','FEHLER','WAV im Extensible-Format: Das Modul lehnt die Datei ab.']);
+    else N.push(['err','FEHLER',`WAV mit ${i.bits} Bit: Das Modul kann nur 16 Bit.`]);
+  }
+  const r=it.srcRate||it.rate;
+  if (r>48000) N.push(['err','FEHLER',`${fmtHz(r)}: Das Modul nimmt höchstens 48 000 Hz.`]);
+  else if (r!==44100) N.push(['warn','HINWEIS',`${fmtHz(r)}: Das Modul rechnet auf 44 100 Hz um${[22050,11025].includes(r)?'':', krumme Raten klingen dabei weniger sauber'}. 44 100 Hz läuft 1:1 durch.`]);
+  if (it.ch.length>1) N.push(['warn','HINWEIS', S.settings.mod==='pcm' ? 'Stereo: Die Platine nutzt nur einen Kanal des PCM5102A, Mono reicht.' : 'Stereo: doppelte Größe, der MAX98357A gibt ohnehin nur Mono aus.']);
+  if (a.clip>0) N.push(['warn','HINWEIS',`Übersteuert an ${a.clip} Stelle${a.clip>1?'n':''}, das klingt kratzig.`]);
+  if (a.peak < -6) N.push(['warn','HINWEIS',`Recht leise (Spitze ${fmtDb(a.peak)}).`]);
+  if (Math.abs(a.dc) > 0.01) N.push(['warn','HINWEIS','Gleichspannungsanteil, kann beim Start und Ende knacken.']);
+  if (a.leadMs+a.tailMs > 250) N.push(['warn','HINWEIS',`${Math.round(a.leadMs+a.tailMs)} ms Stille am Anfang und Ende.`]);
+  return N;
+}
+function resultNotes(it){
+  const o=it.out, N=[];
+  N.push(['ok','OK',`WAV PCM 16 Bit Mono ${fmtHz(o.rate)}, passt zum Modul.`]);
+  if (it.outName!==it.name) N.push(['ok','OK',`Name im Modul: ${it.outName} (Umlaute, Leerzeichen und Sonderzeichen ersetzt, höchstens ${MOD.maxLen} Zeichen).`]);
+  if (it.use==='loop') N.push(['ok','OK','Schleife: Ende geht weich in den Anfang über, nichts geschnitten.']);
+  if (it.use==='loop' && S.settings.rpm>100) N.push(['ok','OK',`Höhen über ${fmtHz(Math.round(20000/(S.settings.rpm/100)))} gefiltert, damit es bei ${S.settings.rpm} % Drehzahl nicht rau klingt.`]);
+  if (MOD.budget){ const share=fsSize(o.wav.length)/MOD.budget*100;
+    N.push([share>40?'warn':'ok', share>40?'HINWEIS':'OK', `Belegt ${share.toFixed(0)} % des Sound-Speichers.`]); }
+  else N.push(['ok','OK',`${fmtKB(o.wav.length)} auf der SD-Karte.`]);
+  if (o.an.dur < 0.05) N.push(['warn','HINWEIS','Nach dem Schneiden fast nichts übrig, Stille-Schnitt ausschalten.']);
+  return N;
+}
+
+// ---------- Darstellung ----------
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function drawWave(cv, data, color){
+  const dpr=window.devicePixelRatio||1, w=Math.max(10,cv.clientWidth), h=cv.clientHeight||54;
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  g.fillStyle=css('--grid'); g.fillRect(0,h/2-0.5,w,1);
+  g.fillStyle=color;
+  const n=data.length, step=n/w;
+  for (let px=0;px<w;px++){
+    const s=Math.floor(px*step), e=Math.min(n,Math.floor((px+1)*step)+1); let lo=0,hi=0;
+    for (let i=s;i<e;i++){ const v=data[i]; if(v<lo)lo=v; if(v>hi)hi=v; }
+    const y1=h/2-hi*(h/2-2), y2=h/2-lo*(h/2-2); g.fillRect(px,y1,1,Math.max(1,y2-y1));
+  }
+}
+function noteList(N){ return '<ul class="notes">'+N.map(([c,t,m])=>`<li class="n-${c}"><i>${t}</i><span>${esc(m)}</span></li>`).join('')+'</ul>'; }
+function cardHtml(it){
+  if (it.error) return `<article class="card" data-id="${it.id}"><div class="card-head"><div class="card-title"><span class="fname">${esc(it.name)}</span></div><button class="btn ghost" data-act="remove" aria-label="Entfernen">✕ Entfernen</button></div><div class="err-box">Diese Datei kann der Browser nicht lesen. Bitte als WAV oder MP3 speichern und erneut versuchen.</div></article>`;
+  const a=it.an, o=it.out, i=it.info;
+  const opts=[['sound','Sound (auch Motor Start/Aus)'],['loop','Motor-Schleife (Leerlauf)']].map(([v,l])=>`<option value="${v}"${v===it.use?' selected':''}>${l}</option>`).join('');
+  return `<article class="card" data-id="${it.id}">
+  <div class="card-head">
+    <div class="card-title"><span class="fname">${esc(it.name)}</span>${it.example?'<span class="tag">Beispiel</span>':''}${it.test?'<span class="tag">Testsound</span>':''}</div>
+    <div class="target"><label class="lbl" for="tg-${it.id}">Art</label><select id="tg-${it.id}" data-act="use">${opts}</select>
+    <button class="btn ghost" data-act="remove" aria-label="Entfernen">✕</button></div>
+  </div>
+  <div class="cols">
+    <div class="col"><h3>Original</h3>
+      <dl class="facts"><dt>Format</dt><dd>${esc(fmtName(i))}</dd><dt>Kanäle</dt><dd>${it.ch.length===1?'Mono':it.ch.length===2?'Stereo':it.ch.length}</dd>
+      <dt>Abtastrate</dt><dd>${fmtHz(it.srcRate||it.rate)}</dd><dt>Länge</dt><dd>${fmtS(a.dur)}</dd><dt>Größe</dt><dd>${fmtKB(i.bytes)}</dd>
+      <dt>Spitze / Mittel</dt><dd>${fmtDb(a.peak)} / ${fmtDb(a.rms)}</dd></dl>
+      ${noteList(originalNotes(it))}
+    </div>
+    <div class="col"><h3>Umgewandelt</h3>
+      <dl class="facts"><dt>Format</dt><dd>WAV PCM 16 Bit</dd><dt>Kanäle</dt><dd>Mono</dd>
+      <dt>Abtastrate</dt><dd>${fmtHz(o.rate)}</dd><dt>Länge</dt><dd>${fmtS(o.an.dur)}</dd><dt>Größe</dt><dd>${fmtKB(o.wav.length)}</dd>
+      <dt>Spitze / Mittel</dt><dd>${fmtDb(o.an.peak)} / ${fmtDb(o.an.rms)}</dd></dl>
+      ${noteList(resultNotes(it))}
+    </div>
+  </div>
+  <div class="waves">
+    <div class="wave"><span>Original</span><canvas data-w="a"></canvas></div>
+    <div class="wave"><span>Umgewandelt</span><canvas data-w="b"></canvas></div>
+  </div>
+  <div class="actions">
+    <button class="btn" data-act="play-a">▶ Original anhören</button>
+    <button class="btn" data-act="play-b" title="So wie das Modul es ausgibt">▶ Umgewandelt anhören</button>
+    <span class="grow"></span>
+    <span class="viewer-note">Name im Modul: <code class="fname">${esc(it.outName)}</code></span>
+    <button class="btn primary" data-act="save">⇩ Herunterladen</button>
+  </div>
+</article>`;
+}
+function render(){
+  assignNames();
+  const ok = S.items.filter(x=>!x.error);
+  $('list-title').textContent = S.items.length ? `Dateien (${S.items.length})` : 'Dateien';
+  $('btn-all').disabled = !ok.length; $('btn-clear').disabled = !S.items.length;
+  $('cards').innerHTML = S.items.length ? S.items.map(cardHtml).join('') :
+    '<div class="panel" style="color:var(--sub)">Noch keine Dateien. Oben eine Audiodatei hineinziehen.</div>';
+  for (const it of ok){
+    const card=document.querySelector(`.card[data-id="${it.id}"]`);
+    let mono=it.ch[0]; if(it.ch.length>1){ mono=new Float32Array(it.ch[0].length); for(const c of it.ch) for(let i=0;i<mono.length;i++) mono[i]+=c[i]/it.ch.length; }
+    drawWave(card.querySelector('[data-w="a"]'), mono, css('--wave-a'));
+    drawWave(card.querySelector('[data-w="b"]'), it.out.float, css('--wave-b'));
+  }
+  renderStorage();
+}
+function renderStorage(){
+  const ok=S.items.filter(x=>!x.error);
+  let used=0; const segs=[];
+  for (const it of ok){ const sz=fsSize(it.out.wav.length); used+=sz; segs.push([it.outName,sz]); }
+  const B=MOD.budget;
+  $('meter').hidden = !B;
+  $('meter').innerHTML = B ? segs.map(([t,sz])=>`<div style="width:${Math.min(100,sz/B*100)}%" title="${esc(t)}"></div>`).join('') : '';
+  if (B){
+    $('meter-used').textContent = `${fmtKB(used)} belegt (${(used/B*100).toFixed(0)} %)`;
+    const free=B-used;
+    $('meter-free').textContent = free>=0 ? `${fmtKB(free)} frei` : `${fmtKB(-free)} zu viel`;
+    $('meter-free').style.color = free<0 ? 'var(--err)' : '';
+  } else {
+    $('meter-used').textContent = `${fmtKB(used)} zusammen`; $('meter-free').textContent = 'SD-Karte, Platz reicht'; $('meter-free').style.color='';
+  }
+  $('slots').innerHTML = ok.length ? ok.map(it=>`<div class="slot used"><span>${esc(it.outName)}</span><span>${fmtKB(fsSize(it.out.wav.length))}</span></div>`).join('')
+    : '<div class="slot"><span>noch keine Dateien</span><span></span></div>';
+}
+
+// ---------- Ablauf ----------
+// Die Module behalten den Dateinamen (Zuordnung zum Sound-Platz in der Weboberflaeche bzw. im
+// Lua-Menue). Name genau wie sanName() in der Modul-Weboberflaeche: Umlaute ersetzt, Leerzeichen
+// -> _, nur A-Z a-z 0-9 _ -, hoechstens 26 (Flash) bzw. 40 (SD) Zeichen + ".wav".
+function sanName(n){
+  let b=String(n).split(/[\\\/]/).pop().replace(/\.[A-Za-z0-9]{1,5}$/,'');
+  b=b.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue')
+     .replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss')
+     .replace(/\s+/g,'_').replace(/[^A-Za-z0-9_\-]/g,'');
+  if(!b) b='sound';
+  return b.substr(0,MOD.maxLen);
+}
+// Gleiche Namen in der Liste bekommen _2, _3 ... (sonst wuerde eine Datei die andere ueberschreiben)
+function assignNames(){
+  const used=new Set();
+  for (const it of S.items){ const base=sanName(it.name); let nm=base, k=2;
+    while (used.has(nm.toLowerCase())){ const suf='_'+k++; nm=base.substr(0,MOD.maxLen-suf.length)+suf; }
+    used.add(nm.toLowerCase()); it.outName=nm+'.wav'; }
+}
+function guessUse(name){ return /loop|leerlauf|idle/i.test(name) ? 'loop' : 'sound'; }
+function reprocess(it){ if(!it.error) it.out=processItem(it,S.settings); }
+async function addFiles(files){
+  if (!files.length) return;
+  S.items = S.items.filter(x=>!x.example);
+  toast(files.length>1 ? `${files.length} Dateien werden umgewandelt …` : 'Datei wird umgewandelt …');
+  for (const f of files){
+    const buf=await f.arrayBuffer(); const info=sniff(buf,f.name);
+    const it={ id:S.nextId++, name:f.name, info, use:guessUse(f.name) };
+    try{
+      const ab=await ctx().decodeAudioData(buf.slice(0));
+      // Der Browser rechnet beim Dekodieren auf seine eigene Rate um - Originalrate aus dem WAV-Kopf fuer die Pruefung merken
+      it.rate=ab.sampleRate; it.ch=[]; for(let c=0;c<ab.numberOfChannels;c++) it.ch.push(ab.getChannelData(c).slice());
+      if (info.channels && info.channels!==it.ch.length) info.channels=it.ch.length;
+      it.srcRate = info.rate || null;
+      it.an=analyse(it.ch,it.rate);
+      reprocess(it);
+    }catch(e){ it.error=true; }
+    S.items.push(it);
+  }
+  render();
+  toast('Fertig umgewandelt');
+}
+function stopPlay(){ if(S.playing){ try{S.playing.src.stop();}catch(e){} S.playing.btn.textContent=S.playing.label; S.playing=null; } }
+function play(it, which, btn){
+  const was = S.playing && S.playing.btn===btn; stopPlay(); if(was) return;
+  const c=ctx(); c.resume();
+  let buf;
+  if (which==='a'){ buf=c.createBuffer(it.ch.length,it.ch[0].length,it.rate); it.ch.forEach((d,i)=>buf.copyToChannel(d,i)); }
+  else {
+    // Wie die Firmware ab Mini v0.15 / Sound-Basis v7.26 / Multiswitch-Sound v1.12: feste 44 100 Hz
+    // Ausgabe, lineare Interpolation zwischen den Samples
+    const src=it.out.float, inc=it.out.rate/OUT_RATE, n=Math.floor((src.length-1)/inc), d=new Float32Array(n);
+    let pos=0; for(let i=0;i<n;i++){ const k=pos|0, f=pos-k; d[i]=src[k]+(src[Math.min(src.length-1,k+1)]-src[k])*f; pos+=inc; }
+    buf=c.createBuffer(1,n,OUT_RATE); buf.copyToChannel(d,0);
+  }
+  const s=c.createBufferSource(); s.buffer=buf; s.loop = which==='b' && it.use==='loop'; s.connect(c.destination); s.start();
+  S.playing={src:s,btn,label:btn.textContent}; btn.textContent='■ Stopp';
+  s.onended=()=>{ if(S.playing && S.playing.src===s){ btn.textContent=S.playing.label; S.playing=null; } };
+}
+
+// ---------- ZIP (ohne Kompression) ----------
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u){ let c=0xFFFFFFFF; for(let i=0;i<u.length;i++) c=CRC[(c^u[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function makeZip(files){
+  const enc=new TextEncoder(), parts=[], central=[]; let off=0;
+  for (const f of files){
+    const nm=enc.encode(f.name), crc=crc32(f.data), sz=f.data.length;
+    const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(8,0,true);
+    h.setUint32(14,crc,true); h.setUint32(18,sz,true); h.setUint32(22,sz,true); h.setUint16(26,nm.length,true);
+    parts.push(new Uint8Array(h.buffer),nm,f.data);
+    const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true);
+    c.setUint32(16,crc,true); c.setUint32(20,sz,true); c.setUint32(24,sz,true); c.setUint16(28,nm.length,true); c.setUint32(42,off,true);
+    central.push(new Uint8Array(c.buffer),nm); off+=30+nm.length+sz;
+  }
+  const cs=central.reduce((s,p)=>s+p.length,0), e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true); e.setUint32(12,cs,true); e.setUint32(16,off,true);
+  return new Blob([...parts,...central,new Uint8Array(e.buffer)]);
+}
+
+// ---------- Speichern ----------
+const inViewer = !!(window.claude && typeof window.claude.use==='function');
+const dlReady = inViewer ? window.claude.use('downloads').catch(()=>null) : Promise.resolve(null);
+if (inViewer) $('viewer-note').hidden=false;
+function anchorSave(name, blob){
+  const u=URL.createObjectURL(blob), a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),4000);
+}
+async function saveFiles(files, zipName){
+  const dl = await dlReady;
+  if (dl){
+    try{ await dl.save({filename:zipName, data:makeZip(files)}); toast(`${zipName} gespeichert`); }
+    catch(e){ toast(e && e.code==='declined' ? 'Speichern abgebrochen' : 'Speichern ist hier nicht möglich. Die Seite als lokale Datei öffnen.'); }
+    return;
+  }
+  if (files.length===1) anchorSave(files[0].name, new Blob([files[0].data],{type:'audio/wav'}));
+  else anchorSave(zipName, makeZip(files));
+}
+
+// ---------- Ereignisse ----------
+const drop=$('drop');
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',ev=>addFiles([...ev.dataTransfer.files]));
+$('file-in').addEventListener('change',ev=>{ addFiles([...ev.target.files]); ev.target.value=''; });
+let tmr=null;
+function applySettings(){ stopPlay(); S.settings=readSettings();
+  $('spec-rate').textContent=fmtHz(S.settings.rate); S.items.forEach(reprocess); render(); }
+for (const id of ['set-rate','set-hp','set-peak','set-rpm','set-presence','set-comp','set-trim'])
+  $(id).addEventListener('change',()=>{ clearTimeout(tmr); tmr=setTimeout(applySettings,120); });
+$('set-mod').addEventListener('change',()=>{ setModule($('set-mod').value, true); applySettings();
+  toast($('set-mod').value==='pcm' ? 'Profil PCM5102A Hi-Fi eingestellt' : 'Profil Sound Mini eingestellt'); });
+$('cards').addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-act]'); if(!b || b.tagName==='SELECT') return;
+  const it=S.items.find(x=>x.id==b.closest('.card').dataset.id); if(!it) return;
+  const act=b.dataset.act;
+  if (act==='remove'){ stopPlay(); S.items=S.items.filter(x=>x!==it); render(); }
+  else if (act==='play-a') play(it,'a',b);
+  else if (act==='play-b') play(it,'b',b);
+  else if (act==='save') saveFiles([{name:it.outName,data:it.out.wav}], it.outName.replace(/\.wav$/,'.zip'));
+});
+$('cards').addEventListener('change',ev=>{
+  const s=ev.target.closest('[data-act="use"]'); if(!s) return;
+  const it=S.items.find(x=>x.id==s.closest('.card').dataset.id); stopPlay(); it.use=s.value; reprocess(it); render();
+});
+$('btn-all').addEventListener('click',()=>{
+  const ok=S.items.filter(x=>!x.error); if(!ok.length) return;
+  saveFiles(ok.map(x=>({name:x.outName,data:x.out.wav})), S.settings.mod==='pcm' ? 'Sounds-PCM5102A.zip' : 'Sounds-Mini-S3.zip');
+});
+$('btn-clear').addEventListener('click',()=>{ stopPlay(); S.items=[]; render(); });
+
+// ---------- Testsounds: synthetisch erzeugt, frei von Rechten, 44 100 Hz ----------
+// Zum Vergleichen vorher/nachher und zum Pruefen von Lautsprecher und Verstaerker.
+function synthTestSounds(){
+  const fs=44100, out=[];
+  const mk=(sec,fn)=>{ const n=Math.round(fs*sec), x=new Float32Array(n); for(let i=0;i<n;i++) x[i]=fn(i/fs,i); return x; };
+  const env=(t,a,b,len)=>Math.min(1,t/a)*Math.min(1,Math.max(0,(len-t)/b));
+  let seed=12345; const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x3fffffff-1; };
+  // Hupe: zwei Toene 420/525 Hz, obertonreich
+  out.push(['Test-Hupe.wav', mk(1.2,t=>{ let v=0; for(const f of [420,525]) for(let h=1;h<=8;h++) v+=Math.sin(2*Math.PI*f*h*t)/h; return 0.32*v*env(t,0.015,0.06,1.2); })]);
+  // Blinker-Relais: Klick (an) und Klack (aus), 2 Takte zu je 0,8 s
+  { let lp=0; out.push(['Test-Blinker.wav', mk(1.6,t=>{ const ph=t%0.8; let v=0;
+      if (ph<0.012) v=rnd()*Math.exp(-ph/0.002)+0.6*Math.sin(2*Math.PI*2400*ph)*Math.exp(-ph/0.003);
+      else if (ph>0.4 && ph<0.416) { const q=ph-0.4; v=0.8*rnd()*Math.exp(-q/0.003)+0.5*Math.sin(2*Math.PI*1300*q)*Math.exp(-q/0.004); }
+      lp+=0.5*(v-lp); return 0.9*lp; })]); }
+  // Rueckfahrwarner: 1 kHz, 3 x 0,5 s an / 0,5 s aus
+  out.push(['Test-Rueckfahrwarner.wav', mk(2.6,t=>{ const ph=t%1; return ph<0.5 ? 0.7*Math.sin(2*Math.PI*1000*t)*env(ph,0.005,0.005,0.5) : 0; })]);
+  // Martinshorn: 440 / 585 Hz im Wechsel, je 0,65 s, 2 Durchgaenge
+  { let phase=0; out.push(['Test-Martinshorn.wav', mk(2.6,t=>{ const f=(Math.floor(t/0.65)%2)?585:440; phase+=2*Math.PI*f/fs; let v=0;
+      for(let h=1;h<=6;h++) v+=Math.sin(h*phase)/(h*h*0.6+0.4); return 0.45*v*env(t,0.02,0.05,2.6); })]); }
+  // Motor-Leerlauf (Schleife): Diesel 750 U/min, 4 Zylinder -> 25 Zuendungen/s, genau 50 in 2 s
+  { let lp=0; out.push(['Test-Motor-Leerlauf-loop.wav', mk(2.0,(t,i)=>{ const k=Math.floor(t*25), ph=t*25-k, q=ph/25;
+      const amp=1+0.12*Math.sin(k*2.3)+0.06*Math.sin(k*0.7);
+      const thump=Math.sin(2*Math.PI*70*q)*Math.exp(-q/0.012), rattle=rnd()*Math.exp(-q/0.006);
+      lp+=0.18*(rattle-lp); return 0.55*amp*(thump+0.9*lp); })]); }
+  // Sweep 40 Hz -> 16 kHz, 6 s, -6 dB: zeigt, ab wo der Lautsprecher spielt und wo es scheppert
+  { const T=6, f0=40, f1=16000, K=Math.log(f1/f0); out.push(['Test-Sweep-40Hz-16kHz.wav', mk(T,t=>0.5*Math.sin(2*Math.PI*f0*T/K*(Math.exp(t/T*K)-1))*env(t,0.05,0.05,T))]); }
+  // Gleichanteil weg, Spitze auf -1 dBFS
+  for (const [,x] of out){ let m=0; for(const v of x) m+=v; m/=x.length; let pk=0; for(let i=0;i<x.length;i++){ x[i]-=m; pk=Math.max(pk,Math.abs(x[i])); }
+    const g=0.891/(pk||1); for(let i=0;i<x.length;i++) x[i]*=g; }
+  return out.map(([name,x])=>({name,x,rate:fs}));
+}
+$('btn-test').addEventListener('click',()=>{
+  stopPlay(); S.items=S.items.filter(x=>!x.example);
+  for (const t of synthTestSounds()){
+    const it={ id:S.nextId++, name:t.name, test:true, rate:t.rate, ch:[t.x],
+      info:{container:'WAV',fmt:1,bits:16,rate:t.rate,channels:1,bytes:44+t.x.length*2} };
+    it.use=guessUse(t.name); it.an=analyse(it.ch,t.rate); reprocess(it); S.items.push(it);
+  }
+  render(); toast('6 Testsounds eingefügt');
+});
+let rz=null; window.addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(render,200); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',render);
+
+// ---------- Beispiel beim Start: Hupe, 48 kHz Stereo, uebersteuert, mit Stille und Gleichanteil ----------
+(function example(){
+  const fs=48000, n=Math.round(fs*1.9), L=new Float32Array(n), R=new Float32Array(n);
+  for (let i=0;i<n;i++){
+    const t=i/fs; let v=0;
+    if (t>0.35 && t<1.55){
+      const env=Math.min(1,(t-0.35)/0.02)*Math.min(1,(1.55-t)/0.05);
+      for (const f of [420,525]) for (let h=1;h<=7;h++) v+=Math.sin(2*Math.PI*f*h*t)/(h*1.4);
+      v=v*0.55*env+0.15*Math.sin(2*Math.PI*60*t)*env;
+    }
+    v=Math.max(-1,Math.min(1,v*1.25))+0.03;
+    L[i]=Math.max(-1,Math.min(1,v)); R[i]=Math.max(-1,Math.min(1,v*0.92));
+  }
+  const it={ id:S.nextId++, name:'Beispiel-Hupe.wav', example:true, use:'sound', rate:fs, ch:[L,R],
+    info:{container:'WAV',fmt:1,bits:16,rate:fs,channels:2,bytes:44+n*4} };
+  it.an=analyse(it.ch,fs); reprocess(it); S.items.push(it); render();
+})();
+window.__sa = S; // fuer Tests
+</script>
