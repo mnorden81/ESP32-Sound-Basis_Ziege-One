@@ -110,8 +110,10 @@ void SetVolume(int16_t *Left, int16_t *Right, int16_t Volume)
     uint32_t scale = (uint32_t(Volume) * 256u) / 100u; // Q8.8
     int32_t l = (int32_t)(*Left) * (int32_t)scale;
     int32_t r = (int32_t)(*Right) * (int32_t)scale;
-    *Left = int16_t((l + 128) >> 8);
-    *Right = int16_t((r + 128) >> 8);
+    // v7.26: auf den 16-Bit-Bereich begrenzen - bei Volumen ueber 100 % ist das
+    // Ergebnis sonst uebergelaufen (lautes Knacken statt Begrenzung)
+    *Left = int16_t(std::clamp((l + 128) >> 8, (int32_t)-32768, (int32_t)32767));
+    *Right = int16_t(std::clamp((r + 128) >> 8, (int32_t)-32768, (int32_t)32767));
 }
 
 /**********************************************************************************************************************/
@@ -430,6 +432,7 @@ void XT_Wav_Class::LoadWavFile()
         SampleRate = WavHeader.SampleRate;
         BytesPerSample = (WavHeader.BitsPerSample / 8) * WavHeader.NumChannels;
         NumChannels = WavHeader.NumChannels;
+        Bits8 = (WavHeader.BitsPerSample == 8); // v7.26
         DataSize = WavHeader.DataSize;
         IncreaseBy = float(SampleRate) / SAMPLES_PER_SEC;
         PlayingTime = (1000u * DataSize) / (uint32_t)(SampleRate * BytesPerSample);
@@ -539,6 +542,7 @@ void XT_Wav_Class::Init()
 {
     if (g_audioDebug) { Serial.print("XT_Wav_Class::Init() called for: "); Serial.println(FileName); }
     LastIntCount = 0;
+    HavePrev = false; // v7.26: Interpolation beginnt neu
     if (Speed >= 0 && FileOK)
     {
         TotalBytesRead = 0;
@@ -552,6 +556,21 @@ void XT_Wav_Class::Init()
     SpeedUpCount = 0;
     TimeElapsed = 0;
     TimeLeft = PlayingTime;
+}
+
+// v7.26: ein Sample-Paar (L/R) ab Byte-Position Idx aus dem Puffer lesen.
+// 8-Bit-WAV ist vorzeichenlos (128 = Mitte) - frueher wurde es wie 16 Bit
+// gelesen, heraus kam nur Rauschen.
+void XT_Wav_Class::ReadFrame(int64_t Idx, int16_t *L, int16_t *R)
+{
+    if (Bits8)
+    {
+        *L = (int16_t)(((int)Samples[Idx] - 128) << 8);
+        *R = (NumChannels == 2) ? (int16_t)(((int)Samples[Idx + 1] - 128) << 8) : *L;
+        return;
+    }
+    *L = (int16_t)((uint8_t)Samples[Idx] | ((int16_t)Samples[Idx + 1] << 8));
+    *R = (NumChannels == 2) ? (int16_t)((uint8_t)Samples[Idx + 2] | ((int16_t)Samples[Idx + 3] << 8)) : *L;
 }
 
 void XT_Wav_Class::NextSample(int16_t *Left, int16_t *Right)
@@ -584,9 +603,14 @@ void XT_Wav_Class::NextSample(int16_t *Left, int16_t *Right)
         // synchrone Pfad als Notfall-Rueckfall.
         if (BackReady)
         {
+            // v7.26: den Ueberhang ueber das Pufferende mitnehmen statt bei 0
+            // neu anzufangen - bei Speed > 1 (Motor-Drehzahl) gingen sonst an
+            // jeder Puffergrenze bis zu einige Samples verloren (Phasensprung,
+            // rauer Klang).
+            int64_t carry = SamplesDataIdx - (int64_t)LastNumBytesRead;
             memcpy(Samples, BackSamples, BackNumBytesRead);
             LastNumBytesRead = BackNumBytesRead;
-            SamplesDataIdx = 0;
+            SamplesDataIdx = (carry > 0 && carry + BytesPerSample <= (int64_t)LastNumBytesRead) ? carry : 0;
             SamplesBufferIsEmpty = (LastNumBytesRead == 0);
             BackReady = false;
             BackRequested = false;
@@ -608,18 +632,34 @@ void XT_Wav_Class::NextSample(int16_t *Left, int16_t *Right)
         RequestBackFill(); // gleich den naechsten Block im Hintergrund nachladen
     }
 
-    if (NumChannels == 2)
+    // v7.26: weiche Umrechnung. Die Ausgabe laeuft fest mit 44,1 kHz; bei
+    // anderer Abtastrate der Datei oder Motor-Drehzahl (Speed != 1) wurde
+    // bisher das naechstliegende Sample hart wiederholt bzw. uebersprungen
+    // (klingt blechern). Jetzt wird linear zwischen dem vorigen und dem
+    // aktuellen Quell-Sample interpoliert (ein Sample Verzoegerung, dadurch
+    // keine Sonderfaelle an der Puffergrenze). 44,1-kHz-Dateien bei Speed 1
+    // laufen weiterhin unveraendert durch (Count bleibt 0).
+    if (advanceSamples > 0 || !HavePrev)
     {
-        *Left = (int16_t)((uint8_t)Samples[SamplesDataIdx] | ((int16_t)Samples[SamplesDataIdx + 1] << 8));
-        *Right = (int16_t)((uint8_t)Samples[SamplesDataIdx + 2] | ((int16_t)Samples[SamplesDataIdx + 3] << 8));
+        int16_t l, r;
+        ReadFrame(SamplesDataIdx, &l, &r);
+        if (!HavePrev)                   { PrevL = l; PrevR = r; HavePrev = true; }
+        else if (advanceSamples == 1 || SamplesDataIdx < BytesPerSample) { PrevL = CurL; PrevR = CurR; }
+        else                             ReadFrame(SamplesDataIdx - BytesPerSample, &PrevL, &PrevR);
+        CurL = l;
+        CurR = r;
     }
-    else if (NumChannels == 1)
+    if (Count > 0.0f)
     {
-        *Left = (int16_t)((uint8_t)Samples[SamplesDataIdx] | ((int16_t)Samples[SamplesDataIdx + 1] << 8));
-        *Right = *Left;
+        *Left  = (int16_t)(PrevL + (int32_t)((CurL - PrevL) * Count));
+        *Right = (int16_t)(PrevR + (int32_t)((CurR - PrevR) * Count));
     }
-
-    SetVolume(Left, Right, Volume);
+    else
+    {
+        *Left  = PrevL;
+        *Right = PrevR;
+    }
+    // Volumen wird im Mischer (MixSamples) angewendet, nicht mehr hier
 
     if (TotalBytesRead >= DataSize && BackNumBytesRead == 0 && !BackReady && SamplesDataIdx + BytesPerSample >= LastNumBytesRead)
     {
@@ -946,17 +986,6 @@ void XT_I2S_Class::StartSdReaderTask()
 }
 
 
-int16_t ApplyCompressor(int32_t sample, int threshold = 12000, float ratio = 4.0f) {
-    int sign = (sample >= 0) ? 1 : -1;
-    int absSample = std::abs(sample);
-
-    if (absSample > threshold) {
-        int excess = absSample - threshold;
-        absSample = threshold + int(excess / ratio);
-    }
-
-    return int16_t(std::clamp(sign * absSample, -32768, 32767));
-}
 
 uint32_t XT_I2S_Class::MixSamples()
 {
@@ -978,9 +1007,17 @@ uint32_t XT_I2S_Class::MixSamples()
             PlayItem->NextSample(&LeftSample, &RightSample);
             if (PlayItem->Filter != 0)
                 PlayItem->Filter->FilterWave(&LeftSample, &RightSample);
-            SetVolume(&LeftSample, &RightSample, PlayItem->Volume);
-            LeftMix += LeftSample;
-            RightMix += RightSample;
+            // v7.26: Volumen hier in 32 Bit anwenden (vorher zweimal SetVolume():
+            // in NextSample() und hier, jeweils mit 16-Bit-Ueberlauf). Die
+            // gewohnte Lautstaerke-Kurve bleibt gleich (Volumen wirkt
+            // quadratisch: 50 % -> 25 %, 100 % -> 100 %, 200 % -> 400 %),
+            // Uebersteuerung faengt jetzt der Begrenzer unten sauber ab.
+            {
+                int32_t vol = (PlayItem->Volume < 0) ? 100 : PlayItem->Volume; // < 0 = unveraendert (wie SetVolume)
+                int32_t vol2 = vol * vol;
+                LeftMix  += (int32_t)(((int64_t)LeftSample  * vol2) / 10000);
+                RightMix += (int32_t)(((int64_t)RightSample * vol2) / 10000);
+            }
 						activeSources++;
         }
 
@@ -1007,28 +1044,28 @@ uint32_t XT_I2S_Class::MixSamples()
         PlayItem = NextPlayItem;
     }
 
-    // Skalierung bei mehreren Quellen
-		//static float PrevMixFactor = 1.0f;
-		//float TargetMixFactor = 1.0f / std::max(1, activeSources);
-		//PrevMixFactor = PrevMixFactor * 0.9f + TargetMixFactor * 0.1f;
+    // v7.26: Begrenzer statt ApplyCompressor(). Der alte "Kompressor" hat jedes
+    // einzelne Sample ueber 12000 (ca. -9 dBFS) abgeknickt - das ist ein
+    // Verzerrer, keine Kompression. Jetzt bleibt alles unterhalb der
+    // Vollaussteuerung unveraendert. Erst wenn der Mix (mehrere Sounds
+    // gleichzeitig, Volumen ueber 100 %) ueber den Rand ginge, wird die
+    // Gesamtlautstaerke sofort abgesenkt und in ca. 80 ms weich wieder
+    // angehoben.
+    static float limGain = 1.0f;
+    const float LIM_CEIL = 32000.0f;
+    const float LIM_RELEASE = 0.000283f; // 1 - exp(-1 / (0,08 s * 44100))
+    limGain += (1.0f - limGain) * LIM_RELEASE;
+    float peak = (float)std::max(std::abs(LeftMix), std::abs(RightMix));
+    if (peak * limGain > LIM_CEIL)
+        limGain = LIM_CEIL / peak;
+    int16_t OutLeft  = CheckTopBottomedOut((int32_t)lrintf(LeftMix * limGain));
+    int16_t OutRight = CheckTopBottomedOut((int32_t)lrintf(RightMix * limGain));
 
-		//LeftMix *= PrevMixFactor;
-		//RightMix *= PrevMixFactor;
-
-
-    // Lautstärke auf Gesamtmix anwenden
-    //int16_t Left = int16_t(LeftMix);
-    //int16_t Right = int16_t(RightMix);
-    //SetVolume(&Left, &Right, Volume);
-
-    // Begrenzung
-    //LeftMix = uint16_t(CheckTopBottomedOut(Left));
-    //RightMix = uint16_t(CheckTopBottomedOut(Right));
-		LeftMix = ApplyCompressor(LeftMix);
-   	RightMix = ApplyCompressor(RightMix);
-
-
-    MixedSample = (LeftMix << 16) | (RightMix);
+    // v7.26: beide Kanaele auf 16 Bit maskieren. Ein negatives RightMix ist als
+    // int32 vorzeichenerweitert (0xFFFFxxxx) und hat per ODER die obere
+    // Haelfte (den anderen Kanal) bei jedem negativen Sample auf -1 gesetzt -
+    // hoerbare Verzerrung.
+    MixedSample = ((uint32_t)(uint16_t)OutLeft << 16) | (uint16_t)OutRight;
     return MixedSample;
 }
 
