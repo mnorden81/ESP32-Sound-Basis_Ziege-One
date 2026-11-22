@@ -19,6 +19,7 @@ Rund zwei Minuten Überblick über das ganze CRSF-Ökosystem: CRSF-Router, Multi
 - **Motorsound** mit Start-/Loop-/Stopp-Zyklus, Gasrampe und einstellbarer Standgas-Verzögerung; die Loop-Tonhöhe folgt dem Gaskanal
 - **24 frei zuweisbare Zusatzsounds** (Hupe, Blinker, Licht, Sirene, Ladeklappe …), je Slot mit eigener Quelle, Lautstärke und Wiedergabemodus (Normal / Loop / Tippbetrieb)
 - **RC-Systeme:** FrSky, FlySky, ELRS (SBUS), Hott, ELRS (CRSF)
+- **Klangqualität (ab v7.26):** Mischer repariert. Ein Kanal wurde bei jedem negativen Sample zerstört, der eingebaute „Kompressor“ hat alles über ca. −9 dB verzerrt (jetzt ein sauberer Begrenzer, der nur bei Übersteuerung eingreift), Volumen über 100 % kippt nicht mehr über, andere Abtastraten und die Motor-Drehzahl werden weich umgerechnet (lineare Interpolation, kein Phasensprung an der Puffergrenze), 8-Bit-WAV wird richtig gelesen. Nicht auf Hardware getestet.
 - **Funk (ab v7.25):** Module ohne Kabel per ESP-NOW verbinden, gleich wie Multiswitch und CRSF-Router. RC-System „CRSF + Funk senden (Zentrale)“ am Empfänger oder „CRSF aus Funk (Teilnehmer)“, dann bleibt Port A frei. Web-Tab „Funk“ mit Verbindungsanzeige
 - **Mehrfachadress-Erweiterung („MKan")** — 16 zusätzliche Einzelkanäle über zwei Gruppen, wahlweise per CRSF-Gruppenadresse oder per SBUS-Gruppenkanal
 - **Telemetrie:** S.Port-LiPo-Zellüberwachung (FLVSS/MLVSS, 1–6S automatisch erkannt) und GPS-Geschwindigkeit
@@ -80,7 +81,7 @@ loop.wav  shut.wav  start.wav          Motorsound
 sound1.wav … sound24.wav               Zusatzsounds 1–24
 ```
 
-**Format:** 16-Bit-PCM-WAV, mono oder stereo, maximal 44.100 Hz.
+**Format:** 16-Bit-PCM-WAV, mono oder stereo, maximal 44.100 Hz. Am besten klingt **44.100 Hz Mono**: Das Modul gibt fest mit 44.100 Hz aus, solche Dateien laufen 1:1 ohne Umrechnung durch.
 
 Dateien lassen sich per Kartenleser kopieren oder direkt über die Weboberfläche hochladen und löschen — eine hochgeladene Datei wirkt sofort, ohne Neustart.
 

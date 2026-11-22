@@ -218,6 +218,9 @@ public:
 	uint16_t SampleRate;
 	uint8_t BytesPerSample; // i.e. 1,2 4 etc. if stereo and 2 bytes per sample this would be 4
 	uint16_t NumChannels;	 // 1=mono,2=stereo
+	bool Bits8 = false;		 // v7.26: 8-Bit-WAV (vorzeichenlos)
+	bool HavePrev = false;	 // v7.26: lineare Interpolation in NextSample()
+	int16_t PrevL = 0, PrevR = 0, CurL = 0, CurR = 0;
 	uint32_t DataSize = 0;	// The last integer part of count
 	uint32_t DataStart;		// offset of the actual data.
 	int64_t SamplesDataIdx; // Index into the wavs sample data in buffer data loaded from file
@@ -257,6 +260,7 @@ public:
   void UnLoadWavFile();
 	bool OpenWavFile();
 	bool ValidWavData(WavHeader_Struct *Wav);
+	void ReadFrame(int64_t Idx, int16_t *L, int16_t *R);
 	void DumpWAVHeader(WavHeader_Struct *Wav);
 	void PrintData(const char *Data, uint8_t NumBytes);
 };

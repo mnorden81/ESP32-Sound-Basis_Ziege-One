@@ -113,7 +113,7 @@
 #include "sound_map.h"
 #include <new>
 
-uint16_t Version = 725;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (725 -> "7.25")
+uint16_t Version = 726;  // Firmware-Version fuer Web-/Lua-Anzeige: major*100+minor (726 -> "7.26")
 char versionString[6];
 bool gpsPinConflict = false; // true, wenn Port C (GPS) UND SBUS gleichzeitig gewaehlt sind (GPIO27-Konflikt, siehe setup())
 // Ob der AP gerade aktiv ist, wird NICHT hier gespiegelt: loop() fragt dafuer
