@@ -249,6 +249,10 @@ Das Projekt steht unter der **GNU General Public License, Version 3 oder später
 
 Grund: Die enthaltene Audio-Engine von XTronical (`XT_I2S_Audio`) steht unter GPL 3.0 oder später, die Vorlagen von Ziege-One (*ESP32-SBUS-Switch* und *CRSF_ESP32*) stehen unter GPL 3.0. Eine Firmware, die diesen Code enthält und weitergegeben wird, muss als Ganzes unter einer GPL-3.0-kompatiblen Lizenz stehen. Die eingebundenen Bibliotheken (Bolder Flight SBUS: MIT, EspSoftwareSerial und TinyGPSPlus: LGPL-2.1) sind damit vereinbar.
 
+## Sound-Aufbereitung (im Browser)
+
+[Sound-Aufbereitung öffnen](https://raw.githack.com/mnorden81/ESP32-Sound-Basis_Ziege-One/main/werkzeuge/sound-aufbereitung.html#pcm) – prüft Audiodateien (WAV, MP3, M4A …) und wandelt sie passend für dieses Modul um: Sound-Basis (SD-Karte). Ohne Installation, auch am Handy; nichts wird hochgeladen, alles läuft im Browser. Die Dateien behalten ihren Namen (Umlaute und Leerzeichen werden wie im Modul ersetzt), die Zuordnung zum Sound-Platz geschieht im Modul im Tab „Speicher“. Oben lässt sich das Modul umstellen. Selbst erzeugte, rechtefreie Testsounds (Hupe, Blinker, Rückfahrwarner, Martinshorn, Motor-Leerlauf als Schleife, Sweep 40 Hz–16 kHz) gibt es per Knopf „Testsounds einfügen“ oder direkt in [`werkzeuge/testsounds/`](werkzeuge/testsounds/).
+
 ## Prüfstand (WebUI und Lua im Browser)
 
 In [`pruefstand/`](pruefstand/) liegt eine Seite, die die echte Weboberfläche und das Lua-Menü dieser Firmware im Browser zeigt (alle Varianten, Modul simuliert): [Prüfstand öffnen](https://raw.githack.com/mnorden81/ESP32-Sound-Basis_Ziege-One/main/pruefstand/pruefstand.html). Sie wird bei jeder Firmware-Änderung neu gebaut, die GitHub-Prüfung „Prüfstand" achtet darauf.
